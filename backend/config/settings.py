@@ -43,6 +43,8 @@ INSTALLED_APPS = [
     'companies',
     'jobs',
     'applications',
+    "profiles",
+    "saved_jobs",
 ]
 
 MIDDLEWARE = [
@@ -129,3 +131,12 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOW_ALL_ORIGINS = True
 AUTH_USER_MODEL = 'accounts.User'
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = "noreply@swazijobs.local"
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+}
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"

@@ -1,16 +1,24 @@
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin
-
-from .models import User
+from .models import EmployerApplication
 
 
-@admin.register(User)
-class CustomUserAdmin(UserAdmin):
-    list_display = ("username", "email", "role", "is_staff", "is_active")
-    list_filter = ("role", "is_staff", "is_active")
-    fieldsets = UserAdmin.fieldsets + (
-        ("Role Information", {"fields": ("role",)}),
+@admin.register(EmployerApplication)
+class EmployerApplicationAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "company_name",
+        "user",
+        "company_email",
+        "status",
+        "submitted_at",
+        "reviewed_at",
     )
-    add_fieldsets = UserAdmin.add_fieldsets + (
-        ("Role Information", {"fields": ("role",)}),
+    list_filter = ("status", "submitted_at", "reviewed_at")
+    search_fields = (
+        "company_name",
+        "company_email",
+        "company_registration_number",
+        "contact_person_name",
+        "user__username",
+        "user__email",
     )
