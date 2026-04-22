@@ -1,4 +1,5 @@
 import { clearStoredAuth } from "./auth";
+import { safeJson, extractErrorMessage } from "./apiHelpers";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://127.0.0.1:8000";
@@ -83,29 +84,46 @@ export async function authFetch(
     headers,
   });
 
-  if (response.status !== 401) {
-    return response;
-  }
-
-  const newAccessToken = await refreshAccessToken();
-  if (!newAccessToken) {
-    return response;
-  }
-
-  const retryHeaders = new Headers(init.headers || {});
-  if (!retryHeaders.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
-    retryHeaders.set("Content-Type", "application/json");
-  }
-  retryHeaders.set("Authorization", `Bearer ${newAccessToken}`);
-
-  response = await fetch(url, {
-    ...init,
-    headers: retryHeaders,
-  });
-
   if (response.status === 401) {
-    clearStoredAuth();
-    redirectToLoginIfNeeded();
+    const newAccessToken = await refreshAccessToken();
+
+    if (!newAccessToken) {
+      return new Response(JSON.stringify({ error: "Session expired. Please log in again." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const retryHeaders = new Headers(init.headers || {});
+    if (!retryHeaders.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
+      retryHeaders.set("Content-Type", "application/json");
+    }
+    retryHeaders.set("Authorization", `Bearer ${newAccessToken}`);
+
+    response = await fetch(url, {
+      ...init,
+      headers: retryHeaders,
+    });
+
+    if (response.status === 401) {
+      clearStoredAuth();
+      redirectToLoginIfNeeded();
+
+      return new Response(JSON.stringify({ error: "Session expired. Please log in again." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  if (!response.ok) {
+    const data = await safeJson(response);
+    const message = extractErrorMessage(data, "Request failed.");
+
+    return new Response(JSON.stringify({ error: message }), {
+      status: response.status,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   return response;

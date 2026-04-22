@@ -83,7 +83,7 @@ export default function AuthStatus() {
       return;
     }
 
-    authFetch("http://127.0.0.1:8000/api/profiles/notifications/")
+    authFetch("/api/profiles/notifications/")
       .then(async (res) => {
         const data = await parseResponseSafely(res);
 
@@ -104,7 +104,7 @@ export default function AuthStatus() {
       return;
     }
 
-    authFetch("http://127.0.0.1:8000/api/accounts/employer-application/me/")
+    authFetch("/api/accounts/employer-application/me/")
       .then(async (res) => {
         const data = await parseResponseSafely(res);
 
@@ -278,6 +278,13 @@ export default function AuthStatus() {
                     className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                   >
                     Employer Reviews
+                  </Link>
+
+                  <Link
+                    href="/admin/analytics"
+                    className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700"
+                  >
+                    Analytics
                   </Link>
 
                   <Link

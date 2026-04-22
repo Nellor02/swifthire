@@ -1,15 +1,23 @@
+from datetime import timedelta
+
+from django.contrib.auth import get_user_model
+from django.db.models import Count
 from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
+from applications.models import Application
+from jobs.models import Job
 from .models import EmployerApplication
 from .serializers import (
     SeekerRegisterSerializer,
     EmployerApplicationRegisterSerializer,
     EmployerApplicationSerializer,
 )
+
+User = get_user_model()
 
 
 class CurrentUserAPIView(APIView):
@@ -190,3 +198,96 @@ class AdminEmployerApplicationReviewAPIView(APIView):
 
         serializer = EmployerApplicationSerializer(application)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class AdminAnalyticsOverviewAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if getattr(request.user, "role", None) != "admin":
+            return Response(
+                {"error": "Only admins can access analytics."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        today = timezone.now()
+        last_7_days = today - timedelta(days=7)
+        last_30_days = today - timedelta(days=30)
+
+        total_users = User.objects.count()
+        total_seekers = User.objects.filter(role="seeker").count()
+        total_employers = User.objects.filter(role="employer").count()
+        total_admins = User.objects.filter(role="admin").count()
+
+        total_jobs = Job.objects.count()
+        active_jobs = Job.objects.filter(status="active").count()
+        closed_jobs = Job.objects.filter(status="closed").count()
+        draft_jobs = Job.objects.filter(status="draft").count()
+
+        total_applications = Application.objects.count()
+        pending_applications = Application.objects.filter(status="pending").count()
+        reviewed_applications = Application.objects.filter(status="reviewed").count()
+        accepted_applications = Application.objects.filter(status="accepted").count()
+        rejected_applications = Application.objects.filter(status="rejected").count()
+
+        employer_applications_total = EmployerApplication.objects.count()
+        employer_pending = EmployerApplication.objects.filter(status="pending").count()
+        employer_approved = EmployerApplication.objects.filter(status="approved").count()
+        employer_rejected = EmployerApplication.objects.filter(status="rejected").count()
+
+        recent_users_7d = User.objects.filter(date_joined__gte=last_7_days).count()
+        recent_jobs_7d = Job.objects.filter(created_at__gte=last_7_days).count()
+        recent_applications_7d = Application.objects.filter(created_at__gte=last_7_days).count()
+
+        recent_users_30d = User.objects.filter(date_joined__gte=last_30_days).count()
+        recent_jobs_30d = Job.objects.filter(created_at__gte=last_30_days).count()
+        recent_applications_30d = Application.objects.filter(created_at__gte=last_30_days).count()
+
+        top_companies = (
+            Job.objects.values("company__name")
+            .annotate(job_count=Count("id"))
+            .order_by("-job_count", "company__name")[:5]
+        )
+
+        return Response(
+            {
+                "users": {
+                    "total": total_users,
+                    "seekers": total_seekers,
+                    "employers": total_employers,
+                    "admins": total_admins,
+                    "last_7_days": recent_users_7d,
+                    "last_30_days": recent_users_30d,
+                },
+                "jobs": {
+                    "total": total_jobs,
+                    "active": active_jobs,
+                    "closed": closed_jobs,
+                    "draft": draft_jobs,
+                    "last_7_days": recent_jobs_7d,
+                    "last_30_days": recent_jobs_30d,
+                },
+                "applications": {
+                    "total": total_applications,
+                    "pending": pending_applications,
+                    "reviewed": reviewed_applications,
+                    "accepted": accepted_applications,
+                    "rejected": rejected_applications,
+                    "last_7_days": recent_applications_7d,
+                    "last_30_days": recent_applications_30d,
+                },
+                "employer_applications": {
+                    "total": employer_applications_total,
+                    "pending": employer_pending,
+                    "approved": employer_approved,
+                    "rejected": employer_rejected,
+                },
+                "top_companies": [
+                    {
+                        "company_name": item["company__name"] or "Unknown Company",
+                        "job_count": item["job_count"],
+                    }
+                    for item in top_companies
+                ],
+            }
+        )
