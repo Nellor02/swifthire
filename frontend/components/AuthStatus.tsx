@@ -226,6 +226,13 @@ export default function AuthStatus() {
                       </Link>
 
                       <Link
+                        href="/employer/company"
+                        className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700"
+                      >
+                        Company Profile
+                      </Link>
+
+                      <Link
                         href="/talent"
                         className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
                       >

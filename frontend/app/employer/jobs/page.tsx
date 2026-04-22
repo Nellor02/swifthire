@@ -11,6 +11,7 @@ type Job = {
   id: number;
   title: string;
   description?: string;
+  company: number;
   company_name: string;
   location: string;
   job_type: string;
@@ -35,6 +36,19 @@ type Stats = {
 type EmployerApplicationStatus = {
   status: string;
   legacy_account?: boolean;
+};
+
+type Company = {
+  id: number;
+  owner: number;
+  owner_username: string;
+  name: string;
+  email: string;
+  phone: string;
+  website: string;
+  address: string;
+  description: string;
+  jobs_count: number;
 };
 
 function getJobTypeClasses(jobType: string) {
@@ -107,7 +121,9 @@ export default function EmployerJobsPage() {
   const [approvalLoading, setApprovalLoading] = useState(true);
 
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [company, setCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
+  const [companyLoading, setCompanyLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -129,6 +145,7 @@ export default function EmployerJobsPage() {
       setIsEmployer(false);
       setLoading(false);
       setApprovalLoading(false);
+      setCompanyLoading(false);
       return;
     }
 
@@ -139,6 +156,7 @@ export default function EmployerJobsPage() {
       setIsEmployer(false);
       setLoading(false);
       setApprovalLoading(false);
+      setCompanyLoading(false);
       return;
     }
 
@@ -187,6 +205,7 @@ export default function EmployerJobsPage() {
     ) {
       if (!approvalLoading && !isApprovedEmployer) {
         setLoading(false);
+        setCompanyLoading(false);
       }
       return;
     }
@@ -243,6 +262,38 @@ export default function EmployerJobsPage() {
       });
   }, [userChecked, isLoggedIn, isEmployer, approvalLoading, isApprovedEmployer]);
 
+  useEffect(() => {
+    if (
+      !userChecked ||
+      !isLoggedIn ||
+      !isEmployer ||
+      approvalLoading ||
+      !isApprovedEmployer
+    ) {
+      return;
+    }
+
+    setCompanyLoading(true);
+
+    authFetch("http://127.0.0.1:8000/api/companies/me/")
+      .then(async (res) => {
+        const data = await parseResponseSafely(res);
+        if (!res.ok) {
+          throw new Error(data?.error || "Failed to load company profile.");
+        }
+        return data;
+      })
+      .then((data: Company) => {
+        setCompany(data);
+        setCompanyLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setCompany(null);
+        setCompanyLoading(false);
+      });
+  }, [userChecked, isLoggedIn, isEmployer, approvalLoading, isApprovedEmployer]);
+
   async function handleDelete(jobId: number) {
     const confirmDelete = confirm("Are you sure you want to delete this job?");
     if (!confirmDelete) return;
@@ -276,6 +327,15 @@ export default function EmployerJobsPage() {
         ...prev,
         total_jobs: Math.max(0, prev.total_jobs - 1),
       }));
+
+      setCompany((prev) =>
+        prev
+          ? {
+              ...prev,
+              jobs_count: Math.max(0, prev.jobs_count - 1),
+            }
+          : prev
+      );
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : "Delete failed");
@@ -421,6 +481,84 @@ export default function EmployerJobsPage() {
               {stats.total_shortlisted}
             </h2>
           </div>
+        </div>
+
+        <div className="mb-6 rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-100">
+                Company Profile
+              </h2>
+              <p className="mt-1 text-slate-300">
+                Manage how your company appears to candidates on SwiftHire.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/employer/company"
+                className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700"
+              >
+                Edit Company
+              </Link>
+
+              {company && (
+                <Link
+                  href={`/companies/${company.id}`}
+                  className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+                >
+                  View Public Profile
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {companyLoading ? (
+            <p className="mt-4 text-slate-300">Loading company profile...</p>
+          ) : company ? (
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="space-y-3 text-slate-300">
+                <p>
+                  <span className="font-semibold text-slate-100">Name:</span>{" "}
+                  {company.name || "Not provided"}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-100">Email:</span>{" "}
+                  {company.email || "Not provided"}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-100">Phone:</span>{" "}
+                  {company.phone || "Not provided"}
+                </p>
+              </div>
+
+              <div className="space-y-3 text-slate-300">
+                <p>
+                  <span className="font-semibold text-slate-100">Website:</span>{" "}
+                  {company.website || "Not provided"}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-100">Jobs Live:</span>{" "}
+                  {company.jobs_count}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-100">Address:</span>{" "}
+                  {company.address || "Not provided"}
+                </p>
+              </div>
+
+              <div className="md:col-span-2">
+                <p className="font-semibold text-slate-100">Description:</p>
+                <p className="mt-2 whitespace-pre-line text-slate-300">
+                  {company.description || "No description provided yet."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 text-slate-400">
+              Company profile could not be loaded.
+            </p>
+          )}
         </div>
 
         <div className="mb-6 flex items-center justify-between">

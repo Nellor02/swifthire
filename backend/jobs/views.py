@@ -1,8 +1,8 @@
 from django.core.paginator import Paginator
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 
 from .models import Job
 from .serializers import JobSerializer
@@ -13,8 +13,6 @@ from accounts.models import EmployerApplication
 
 
 class JobListCreateAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
     def get(self, request):
         queryset = (
             Job.objects.filter(status="active")
@@ -35,10 +33,46 @@ class JobListCreateAPIView(APIView):
         if job_type:
             queryset = queryset.filter(job_type=job_type)
 
+        page = request.query_params.get("page")
+        page_size = request.query_params.get("page_size")
+
+        if page and page_size:
+            try:
+                page = int(page)
+                page_size = int(page_size)
+            except ValueError:
+                return Response(
+                    {"error": "Invalid pagination values."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            paginator = Paginator(queryset, page_size)
+            page_obj = paginator.get_page(page)
+
+            serializer = JobSerializer(page_obj.object_list, many=True)
+            return Response(
+                {
+                    "count": paginator.count,
+                    "total_pages": paginator.num_pages,
+                    "current_page": page_obj.number,
+                    "next": page_obj.next_page_number() if page_obj.has_next() else None,
+                    "previous": page_obj.previous_page_number()
+                    if page_obj.has_previous()
+                    else None,
+                    "results": serializer.data,
+                }
+            )
+
         serializer = JobSerializer(queryset, many=True)
         return Response(serializer.data)
 
     def post(self, request):
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
         if getattr(request.user, "role", None) != "employer":
             return Response(
                 {"error": "Only employers can create jobs."},
@@ -53,7 +87,6 @@ class JobListCreateAPIView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
         except EmployerApplication.DoesNotExist:
-            # Legacy employer account -> allowed
             pass
 
         company = Company.objects.filter(owner=request.user).first()
@@ -201,7 +234,6 @@ class EmployerJobListAPIView(APIView):
                         status=status.HTTP_403_FORBIDDEN,
                     )
             except EmployerApplication.DoesNotExist:
-                # Legacy employer account -> allowed
                 pass
 
         if getattr(request.user, "role", None) == "admin":
@@ -261,7 +293,6 @@ class EmployerDashboardStatsAPIView(APIView):
                         status=status.HTTP_403_FORBIDDEN,
                     )
             except EmployerApplication.DoesNotExist:
-                # Legacy employer account -> allowed
                 pass
 
         if getattr(request.user, "role", None) == "admin":

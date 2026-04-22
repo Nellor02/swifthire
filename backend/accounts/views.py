@@ -71,8 +71,6 @@ class EmployerApplicationMeAPIView(APIView):
             serializer = EmployerApplicationSerializer(application)
             return Response(serializer.data)
         except EmployerApplication.DoesNotExist:
-            # Legacy employer accounts created before employer application flow
-            # should still be treated as valid approved employers.
             return Response(
                 {
                     "id": None,
@@ -167,6 +165,28 @@ class AdminEmployerApplicationReviewAPIView(APIView):
         application.admin_notes = admin_notes
         application.reviewed_at = timezone.now()
         application.save(update_fields=["status", "admin_notes", "reviewed_at"])
+
+        if new_status == "approved":
+            user = application.user
+
+            if getattr(user, "role", None) != "employer":
+                user.role = "employer"
+                user.save(update_fields=["role"])
+
+            from companies.models import Company
+
+            company_exists = Company.objects.filter(owner=user).exists()
+
+            if not company_exists:
+                Company.objects.create(
+                    owner=user,
+                    name=application.company_name,
+                    email=application.company_email,
+                    phone=application.company_phone,
+                    website=application.company_website,
+                    address=application.company_address,
+                    description=application.business_description,
+                )
 
         serializer = EmployerApplicationSerializer(application)
         return Response(serializer.data, status=status.HTTP_200_OK)

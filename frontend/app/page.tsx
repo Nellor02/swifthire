@@ -11,6 +11,7 @@ import { getStoredUser } from "../lib/auth";
 
 type Job = {
   id: number;
+  company: number;
   title: string;
   description?: string;
   company_name: string;
@@ -34,6 +35,14 @@ type PaginatedJobsResponse = {
 type SavedJobItem = {
   id: number;
   job: number;
+};
+
+type ApplicationItem = {
+  id: number;
+  job: number;
+  job_title: string;
+  status: string;
+  created_at: string;
 };
 
 type StoredUser = {
@@ -80,6 +89,36 @@ function truncateText(text?: string, maxLength = 180) {
   return `${text.slice(0, maxLength)}...`;
 }
 
+function formatApplicationStatus(status: string) {
+  switch ((status || "").toLowerCase()) {
+    case "pending":
+      return "Pending";
+    case "reviewed":
+      return "Reviewed";
+    case "accepted":
+      return "Accepted";
+    case "rejected":
+      return "Rejected";
+    default:
+      return status || "Applied";
+  }
+}
+
+function getApplicationStatusClasses(status: string) {
+  switch ((status || "").toLowerCase()) {
+    case "pending":
+      return "bg-blue-900 text-blue-200 border border-blue-700";
+    case "reviewed":
+      return "bg-yellow-900 text-yellow-200 border border-yellow-700";
+    case "accepted":
+      return "bg-green-900 text-green-200 border border-green-700";
+    case "rejected":
+      return "bg-red-900 text-red-200 border border-red-700";
+    default:
+      return "bg-slate-700 text-slate-200 border border-slate-600";
+  }
+}
+
 async function parseResponseSafely(res: Response) {
   const contentType = res.headers.get("content-type") || "";
 
@@ -99,10 +138,12 @@ export default function HomePage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [allJobs, setAllJobs] = useState<Job[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<number[]>([]);
+  const [applications, setApplications] = useState<ApplicationItem[]>([]);
   const [user, setUser] = useState<StoredUser | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [savedJobsLoading, setSavedJobsLoading] = useState(false);
+  const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [savingJobId, setSavingJobId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
@@ -171,9 +212,7 @@ export default function HomePage() {
       })
       .then((data: SavedJobItem[]) => {
         const ids = Array.isArray(data)
-          ? data
-              .map((item) => Number(item.job))
-              .filter((id) => Number.isFinite(id))
+          ? data.map((item) => Number(item.job)).filter((id) => Number.isFinite(id))
           : [];
         setSavedJobIds(ids);
         setSavedJobsLoading(false);
@@ -181,6 +220,35 @@ export default function HomePage() {
       .catch((err) => {
         console.error(err);
         setSavedJobsLoading(false);
+      });
+  }, [user]);
+
+  useEffect(() => {
+    if (user?.role !== "seeker") {
+      setApplications([]);
+      return;
+    }
+
+    setApplicationsLoading(true);
+
+    authFetch("http://127.0.0.1:8000/api/applications/my/")
+      .then(async (res) => {
+        const data = await parseResponseSafely(res);
+
+        if (!res.ok) {
+          throw new Error(data?.error || "Failed to load applications.");
+        }
+
+        return data;
+      })
+      .then((data: ApplicationItem[]) => {
+        setApplications(Array.isArray(data) ? data : []);
+        setApplicationsLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setApplications([]);
+        setApplicationsLoading(false);
       });
   }, [user]);
 
@@ -304,9 +372,21 @@ export default function HomePage() {
     return uniqueJobTypes.sort((a, b) => a.localeCompare(b));
   }, [allJobs]);
 
+  const applicationsByJobId = useMemo(() => {
+    const map = new Map<number, ApplicationItem>();
+    for (const application of applications) {
+      map.set(application.job, application);
+    }
+    return map;
+  }, [applications]);
+
   async function handleToggleSave(jobId: number) {
     if (user?.role !== "seeker") {
       setSaveError("Only seekers can save jobs.");
+      return;
+    }
+
+    if (applicationsByJobId.has(jobId)) {
       return;
     }
 
@@ -424,20 +504,29 @@ export default function HomePage() {
             Showing {jobs.length} of {totalCount} job{totalCount !== 1 ? "s" : ""}
           </p>
 
-          <select
-            value={sortBy}
-            onChange={(e) => {
-              setSortBy(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-slate-100 outline-none focus:border-blue-500"
-          >
-            <option value="newest">Newest</option>
-            <option value="salary_high">Highest Salary</option>
-            <option value="salary_low">Lowest Salary</option>
-            <option value="title_asc">Title A-Z</option>
-            <option value="title_desc">Title Z-A</option>
-          </select>
+          <div className="flex gap-3">
+            <Link
+              href="/companies"
+              className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+            >
+              Browse Companies
+            </Link>
+
+            <select
+              value={sortBy}
+              onChange={(e) => {
+                setSortBy(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-slate-100 outline-none focus:border-blue-500"
+            >
+              <option value="newest">Newest</option>
+              <option value="salary_high">Highest Salary</option>
+              <option value="salary_low">Lowest Salary</option>
+              <option value="title_asc">Title A-Z</option>
+              <option value="title_desc">Title Z-A</option>
+            </select>
+          </div>
         </div>
 
         {saveError && (
@@ -465,6 +554,7 @@ export default function HomePage() {
             <div className="grid gap-4">
               {jobs.map((job) => {
                 const isSaved = savedJobIds.includes(job.id);
+                const existingApplication = applicationsByJobId.get(job.id);
 
                 return (
                   <div
@@ -482,11 +572,31 @@ export default function HomePage() {
                   >
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                       <div className="flex-1">
-                        <h2 className="text-2xl font-semibold text-slate-100">
-                          {job.title}
-                        </h2>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <h2 className="text-2xl font-semibold text-slate-100">
+                            {job.title}
+                          </h2>
 
-                        <p className="mt-1 text-slate-300">{job.company_name}</p>
+                          {existingApplication && (
+                            <span
+                              className={`rounded px-3 py-1 text-xs font-semibold uppercase tracking-wide ${getApplicationStatusClasses(
+                                existingApplication.status
+                              )}`}
+                            >
+                              {formatApplicationStatus(existingApplication.status)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="mt-1">
+                          <Link
+                            href={`/companies/${job.company}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-slate-300 hover:text-blue-400 hover:underline"
+                          >
+                            {job.company_name}
+                          </Link>
+                        </div>
 
                         <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-300">
                           <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
@@ -531,23 +641,42 @@ export default function HomePage() {
                           View Job
                         </Link>
 
-                        {user?.role === "seeker" && (
-                          <button
-                            onClick={() => handleToggleSave(job.id)}
-                            disabled={savingJobId === job.id || savedJobsLoading}
-                            className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
-                              isSaved
-                                ? "bg-yellow-600 hover:bg-yellow-700"
-                                : "bg-slate-700 hover:bg-slate-600"
-                            }`}
-                          >
-                            {savingJobId === job.id
-                              ? "Saving..."
-                              : isSaved
-                              ? "Saved"
-                              : "Save"}
-                          </button>
-                        )}
+                        <Link
+                          href={`/companies/${job.company}`}
+                          className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+                        >
+                          Company
+                        </Link>
+
+                        {user?.role === "seeker" &&
+                          (applicationsLoading ? (
+                            <span className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-300">
+                              Checking...
+                            </span>
+                          ) : existingApplication ? (
+                            <Link
+                              href={`/my-applications/${existingApplication.id}`}
+                              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"
+                            >
+                              Applied
+                            </Link>
+                          ) : (
+                            <button
+                              onClick={() => handleToggleSave(job.id)}
+                              disabled={savingJobId === job.id || savedJobsLoading}
+                              className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+                                isSaved
+                                  ? "bg-yellow-600 hover:bg-yellow-700"
+                                  : "bg-slate-700 hover:bg-slate-600"
+                              }`}
+                            >
+                              {savingJobId === job.id
+                                ? "Saving..."
+                                : isSaved
+                                ? "Saved"
+                                : "Save"}
+                            </button>
+                          ))}
                       </div>
                     </div>
                   </div>

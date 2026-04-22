@@ -4,5 +4,5 @@ from .models import Company
 
 @admin.register(Company)
 class CompanyAdmin(admin.ModelAdmin):
-    list_display = ("name", "owner", "location", "created_at")
-    search_fields = ("name", "owner__username", "location")
+    list_display = ("id", "name", "owner", "email", "phone")
+    search_fields = ("name", "owner__username", "email", "phone", "website")

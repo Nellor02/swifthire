@@ -1,20 +1,31 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import StatusCard from "../../../components/StatusCard";
 import { getStoredUser } from "../../../lib/auth";
+import { authFetch } from "../../../lib/api";
 
 type Job = {
   id: number;
+  company: number;
+  company_name: string;
   title: string;
-  description?: string;
-  company_name?: string;
-  location?: string;
-  job_type?: string;
+  description: string;
+  location: string;
+  job_type: string;
   salary_min?: number | null;
   salary_max?: number | null;
+  status: string;
+};
+
+type Application = {
+  id: number;
+  job: number;
+  job_title: string;
+  status: string;
+  created_at: string;
 };
 
 type StoredUser = {
@@ -30,10 +41,10 @@ async function parseResponseSafely(res: Response) {
   }
 
   const text = await res.text();
-  return { error: text || `Request failed (${res.status})` };
+  return { error: text || `Request failed with status ${res.status}` };
 }
 
-function formatJobType(jobType?: string) {
+function formatJobType(jobType: string) {
   switch (jobType) {
     case "full_time":
       return "Full-time";
@@ -49,31 +60,66 @@ function formatJobType(jobType?: string) {
 }
 
 function formatSalary(job: Job) {
-  if (job.salary_min && job.salary_max) {
-    return `${job.salary_min} - ${job.salary_max}`;
-  }
-  if (job.salary_min) return `${job.salary_min}+`;
-  if (job.salary_max) return `Up to ${job.salary_max}`;
+  const min = job.salary_min;
+  const max = job.salary_max;
+
+  if (min && max) return `${min} - ${max}`;
+  if (min) return `${min}+`;
+  if (max) return `Up to ${max}`;
   return "Not specified";
+}
+
+function formatStatus(status: string) {
+  switch ((status || "").toLowerCase()) {
+    case "pending":
+      return "Pending";
+    case "reviewed":
+      return "Reviewed";
+    case "accepted":
+      return "Accepted";
+    case "rejected":
+      return "Rejected";
+    default:
+      return status || "Unknown";
+  }
+}
+
+function getStatusClasses(status: string) {
+  switch ((status || "").toLowerCase()) {
+    case "pending":
+      return "bg-blue-900 text-blue-200 border border-blue-700";
+    case "reviewed":
+      return "bg-yellow-900 text-yellow-200 border border-yellow-700";
+    case "accepted":
+      return "bg-green-900 text-green-200 border border-green-700";
+    case "rejected":
+      return "bg-red-900 text-red-200 border border-red-700";
+    default:
+      return "bg-slate-700 text-slate-200 border border-slate-600";
+  }
 }
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string | string[] }>();
-  const rawJobId = params?.id;
-  const jobId = Array.isArray(rawJobId) ? rawJobId[0] : rawJobId;
+  const rawId = params?.id;
+  const jobId = Array.isArray(rawId) ? rawId[0] : rawId;
 
   const [job, setJob] = useState<Job | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [user, setUser] = useState<StoredUser | null>(null);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [applicationsLoading, setApplicationsLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const storedUser = getStoredUser();
-    setUser(storedUser);
+    setUser(getStoredUser());
   }, []);
 
   useEffect(() => {
     if (!jobId) return;
+
+    setLoading(true);
+    setError("");
 
     fetch(`http://127.0.0.1:8000/api/jobs/${jobId}/`)
       .then(async (res) => {
@@ -96,95 +142,216 @@ export default function JobDetailPage() {
       });
   }, [jobId]);
 
-  const isEmployerOrAdmin =
-    user?.role === "employer" || user?.role === "admin";
-  const isSeeker = user?.role === "seeker";
+  useEffect(() => {
+    if (!user || user.role !== "seeker") {
+      setApplications([]);
+      return;
+    }
+
+    setApplicationsLoading(true);
+
+    authFetch("http://127.0.0.1:8000/api/applications/my/")
+      .then(async (res) => {
+        const data = await parseResponseSafely(res);
+
+        if (!res.ok) {
+          throw new Error(data?.error || "Failed to load applications.");
+        }
+
+        return data;
+      })
+      .then((data: Application[]) => {
+        setApplications(Array.isArray(data) ? data : []);
+        setApplicationsLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setApplications([]);
+        setApplicationsLoading(false);
+      });
+  }, [user]);
+
+  const existingApplication = useMemo(() => {
+    const numericJobId = Number(jobId);
+    if (!Number.isFinite(numericJobId)) return null;
+    return applications.find((application) => application.job === numericJobId) || null;
+  }, [applications, jobId]);
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-slate-900 p-6">
+        <div className="mx-auto max-w-5xl">
+          <StatusCard
+            title="Loading Job"
+            message="Please wait while the job details are loading."
+            variant="info"
+          />
+        </div>
+      </main>
+    );
+  }
+
+  if (error || !job) {
+    return (
+      <main className="min-h-screen bg-slate-900 p-6">
+        <div className="mx-auto max-w-5xl">
+          <StatusCard
+            title="Error"
+            message={error || "Job not found."}
+            variant="error"
+            actionHref="/"
+            actionLabel="Back to Jobs"
+          />
+        </div>
+      </main>
+    );
+  }
+
+  const canApply = user?.role === "seeker";
+  const isEmployerLike = user?.role === "employer" || user?.role === "admin";
 
   return (
     <main className="min-h-screen bg-slate-900 p-6">
-      <div className="mx-auto max-w-4xl">
-        <Link
-          href="/"
-          className="mb-6 inline-block rounded-lg bg-slate-700 px-4 py-2 text-sm text-white hover:bg-slate-600"
-        >
-          ← Back to Jobs
-        </Link>
-
-        {loading ? (
-          <StatusCard
-            title="Loading Job"
-            message="Please wait while job details are loading."
-            variant="info"
-          />
-        ) : error ? (
-          <StatusCard
-            title="Error"
-            message={error}
-            variant="error"
-          />
-        ) : !job ? (
-          <StatusCard
-            title="Job Not Found"
-            message="This job does not exist."
-            variant="neutral"
-          />
-        ) : (
-          <div className="rounded-xl border border-slate-700 bg-slate-800 p-6">
-            <h1 className="text-3xl font-bold text-slate-100">
-              {job.title}
-            </h1>
-
-            <p className="mt-2 text-slate-300">
-              {job.company_name || "Company not specified"}
-            </p>
-
-            <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-300">
-              <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                {job.location || "No location"}
-              </span>
-
-              <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                {formatJobType(job.job_type)}
-              </span>
-
-              <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                Salary: {formatSalary(job)}
-              </span>
-            </div>
-
-            <div className="mt-6">
-              <h2 className="text-xl font-semibold text-slate-100">
-                Job Description
-              </h2>
-
-              <p className="mt-2 whitespace-pre-line text-slate-200">
-                {job.description || "No description provided."}
-              </p>
-            </div>
-
-            <div className="mt-6">
-              {isSeeker ? (
-                <Link
-                  href={`/jobs/${job.id}/apply`}
-                  className="inline-block rounded-lg bg-blue-600 px-6 py-3 text-white hover:bg-blue-700"
-                >
-                  Apply Now
-                </Link>
-              ) : isEmployerOrAdmin ? (
-                <div className="inline-block rounded-lg bg-slate-700 px-6 py-3 text-sm text-slate-300">
-                  Employers and admins can view this job, but cannot apply.
-                </div>
-              ) : (
-                <Link
-                  href="/login"
-                  className="inline-block rounded-lg bg-blue-600 px-6 py-3 text-white hover:bg-blue-700"
-                >
-                  Login to Apply
-                </Link>
-              )}
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-100">{job.title}</h1>
+            <div className="mt-2">
+              <Link
+                href={`/companies/${job.company}`}
+                className="text-lg text-blue-400 hover:underline"
+              >
+                {job.company_name}
+              </Link>
             </div>
           </div>
-        )}
+
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/"
+              className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+            >
+              Back to Jobs
+            </Link>
+
+            <Link
+              href={`/companies/${job.company}`}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              View Company
+            </Link>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm">
+          <div className="flex flex-wrap gap-3 text-sm text-slate-300">
+            <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+              {job.location || "No location"}
+            </span>
+
+            <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+              {formatJobType(job.job_type)}
+            </span>
+
+            <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+              Salary: {formatSalary(job)}
+            </span>
+          </div>
+
+          <div className="mt-6">
+            <h2 className="mb-3 text-xl font-semibold text-slate-100">
+              Job Description
+            </h2>
+            <p className="whitespace-pre-line text-slate-200">
+              {job.description || "No description provided."}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          {canApply ? (
+            applicationsLoading ? (
+              <StatusCard
+                title="Checking Application Status"
+                message="Please wait while we verify whether you have already applied."
+                variant="info"
+              />
+            ) : existingApplication ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h2 className="text-xl font-semibold text-slate-100">
+                      You have already applied for this job
+                    </h2>
+
+                    <span
+                      className={`rounded px-3 py-1 text-sm font-semibold uppercase tracking-wide ${getStatusClasses(
+                        existingApplication.status
+                      )}`}
+                    >
+                      {formatStatus(existingApplication.status)}
+                    </span>
+                  </div>
+
+                  <p className="mt-2 text-slate-300">
+                    Application submitted on{" "}
+                    {new Date(existingApplication.created_at).toLocaleString()}.
+                  </p>
+
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <Link
+                      href={`/my-applications/${existingApplication.id}`}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                    >
+                      View My Application
+                    </Link>
+
+                    <Link
+                      href="/my-applications"
+                      className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+                    >
+                      My Applications
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm">
+                <h2 className="text-xl font-semibold text-slate-100">
+                  Interested in this role?
+                </h2>
+                <p className="mt-2 text-slate-300">
+                  Review the job details above, then continue to the application form when ready.
+                </p>
+
+                <div className="mt-4">
+                  <Link
+                    href={`/jobs/${job.id}/apply`}
+                    className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                  >
+                    Apply Now
+                  </Link>
+                </div>
+              </div>
+            )
+          ) : isEmployerLike ? (
+            <StatusCard
+              title="Viewing Only"
+              message="Employers and admins can view this job, but cannot apply for it."
+              variant="neutral"
+              actionHref={`/companies/${job.company}`}
+              actionLabel="View Company"
+            />
+          ) : (
+            <StatusCard
+              title="Login to Apply"
+              message="You need a seeker account to apply for this job."
+              variant="warning"
+              actionHref="/login"
+              actionLabel="Go to Login"
+            />
+          )}
+        </div>
       </div>
     </main>
   );

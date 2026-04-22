@@ -48,7 +48,6 @@ class MyCompanyAPIView(APIView):
                         status=status.HTTP_403_FORBIDDEN,
                     )
             except EmployerApplication.DoesNotExist:
-                # legacy employer account -> allowed
                 pass
 
         try:
