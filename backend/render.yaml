@@ -1,39 +1,8 @@
-M
-My Workspace
-New Blueprint
-
-Search
-Ctrl+
-K
-
-New
-
-
-n
-You are deploying from a Blueprint for Nellor02/swifthire
-Blueprint Name
-A unique name for your Blueprint.
-Swift Hire Production
-Branch
-The repository branch with the render.yaml file.
-Branch
-main
-
-Blueprint Path
-The path to the Blueprint file in your repo (e.g., infra/render.yaml). Defaults to render.yaml at the root of your repository.
-backend/render.yaml
-Review Blueprint configurations from Nellor02/swifthire.
-All future updates to your Blueprint file will be synced automatically, which may change your costs.
-A Blueprint file was found, but there was an issue.
-
-databases[0].plan
-Legacy Postgres plans, including 'starter', are no longer supported for new databases. Update your database instance to a new plan in your render.yaml
-
 services:
   - type: web
     name: swifthire-backend
     env: python
-    plan: starter
+    plan: standard
     rootDir: backend
     buildCommand: ./build.sh
     startCommand: gunicorn config.wsgi:application
@@ -56,11 +25,7 @@ services:
         fromDatabase:
           name: swifthire-db
           property: connectionString
+
 databases:
   - name: swifthire-db
     plan: basic-256mb
-Retry
-0 services selected:
-
-Move
-
