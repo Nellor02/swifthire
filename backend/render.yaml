@@ -58,7 +58,7 @@ services:
           property: connectionString
 databases:
   - name: swifthire-db
-    plan: 256mb
+    plan: basic-256mb
 Retry
 0 services selected:
 
