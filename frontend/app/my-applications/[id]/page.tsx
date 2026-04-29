@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { getStoredUser } from "../../../lib/auth";
 import { authFetch } from "../../../lib/api";
 import StatusCard from "../../../components/StatusCard";
-import { getFileUrl } from "../../../lib/api"; // adjust path if needed
+import { getFileUrl } from "../../../lib/api";
 
 type ApplicationDetail = {
   id: number;
@@ -317,6 +317,7 @@ export default function SeekerApplicationDetailPage() {
                     }
                     target="_blank"
                     rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
                   >
                     View Uploaded CV
                   </a>
