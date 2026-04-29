@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { getStoredUser } from "../../../../lib/auth";
 import { authFetch } from "../../../../lib/api";
 import StatusCard from "../../../../components/StatusCard";
+import { getFileUrl } from "../../../../lib/api"; // adjust path if needed
 
 type ApplicationDetail = {
   id: number;

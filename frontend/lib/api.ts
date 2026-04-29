@@ -132,3 +132,17 @@ export async function authFetch(
 export function getApiBaseUrl(): string {
   return API_BASE_URL;
 }
+
+export function getFileUrl(filePath?: string | null) {
+  if (!filePath) return "";
+
+  if (filePath.startsWith("http")) {
+    return filePath;
+  }
+
+  const base =
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    "https://swifthire-backend-jj12.onrender.com";
+
+  return `${base}${filePath.startsWith("/") ? filePath : `/${filePath}`}`;
+}

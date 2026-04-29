@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { getStoredUser } from "../../../../../lib/auth";
 import { authFetch } from "../../../../../lib/api";
 import StatusCard from "../../../../../components/StatusCard";
+import { getFileUrl } from "../../../../../lib/api"; // adjust path if needed
 
 type Applicant = {
   id: number;
@@ -393,16 +394,17 @@ export default function EmployerApplicantsPage({
                 </div>
 
                 {application.cv && (
-                  <div className="mt-4">
-                    <a
-                      href={application.cv}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                    >
-                      View Uploaded CV
-                    </a>
-                  </div>
+                  <a
+                    href={
+                      application.cv.startsWith("http")
+                      ? application.cv
+                      : `${process.env.NEXT_PUBLIC_API_BASE_URL}${application.cv}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View Uploaded CV
+                  </a>
                 )}
 
                 <p className="mt-4 text-sm text-slate-400">

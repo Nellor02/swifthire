@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { getStoredUser } from "../../../lib/auth";
 import { authFetch } from "../../../lib/api";
 import StatusCard from "../../../components/StatusCard";
+import { getFileUrl } from "../../../lib/api"; // adjust path if needed
 
 type ApplicationDetail = {
   id: number;
@@ -309,10 +310,13 @@ export default function SeekerApplicationDetailPage() {
 
                 {application.cv && (
                   <a
-                    href={application.cv}
+                    href={
+                      application.cv.startsWith("http")
+                      ? application.cv
+                      : `${process.env.NEXT_PUBLIC_API_BASE_URL}${application.cv}`
+                    }
                     target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                    rel="noopener noreferrer"
                   >
                     View Uploaded CV
                   </a>

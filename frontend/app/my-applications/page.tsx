@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { getStoredUser } from "../../lib/auth";
 import { authFetch } from "../../lib/api";
 import StatusCard from "../../components/StatusCard";
+import { getFileUrl } from "../../lib/api"; // adjust path if needed
 
 type Application = {
   id: number;
@@ -258,12 +259,15 @@ export default function MyApplicationsPage() {
 
                     {application.cv && (
                       <a
-                        href={application.cv}
+                        href={
+                          application.cv.startsWith("http")
+                          ? application.cv
+                          : `${process.env.NEXT_PUBLIC_API_BASE_URL}${application.cv}`
+                        }
                         target="_blank"
-                        rel="noreferrer"
-                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                        rel="noopener noreferrer"
                       >
-                        View CV
+                        View Uploaded CV
                       </a>
                     )}
                   </div>
