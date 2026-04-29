@@ -174,5 +174,5 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 
 DEFAULT_FROM_EMAIL = os.getenv(
     "DJANGO_DEFAULT_FROM_EMAIL",
-    "SwiftHire <noreply@swifthire.com>",
+    "SwiftHire <nellorchamp@gmail.com>",
 )
