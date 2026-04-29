@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getStoredUser } from "../../../lib/auth";
-import { authFetch } from "../../../lib/api";
+import { authFetch, getApiBaseUrl } from "../../../lib/api";
 import StatusCard from "../../../components/StatusCard";
 
 type ProfileData = {
@@ -23,6 +23,7 @@ type ProfileData = {
   preferred_location: string;
   linkedin_url: string;
   portfolio_url: string;
+  cv?: string | null;
   is_public: boolean;
 };
 
@@ -47,6 +48,16 @@ function parseSkills(skills: string) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function getFileUrl(filePath?: string | null) {
+  if (!filePath) return "";
+
+  if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+    return filePath;
+  }
+
+  return `${getApiBaseUrl()}${filePath.startsWith("/") ? filePath : `/${filePath}`}`;
 }
 
 async function parseResponseSafely(res: Response) {
@@ -92,7 +103,7 @@ export default function ProfilePreviewPage() {
 
     setIsSeeker(true);
 
-    authFetch("http://127.0.0.1:8000/api/profiles/me/")
+    authFetch("/api/profiles/me/")
       .then(async (res) => {
         const data = await parseResponseSafely(res);
 
@@ -203,6 +214,7 @@ export default function ProfilePreviewPage() {
   }
 
   const skills = parseSkills(profile.skills);
+  const cvUrl = getFileUrl(profile.cv);
 
   return (
     <main className="min-h-screen bg-slate-900 p-6">
@@ -283,6 +295,17 @@ export default function ProfilePreviewPage() {
                   className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
                 >
                   Portfolio
+                </a>
+              )}
+
+              {cvUrl && (
+                <a
+                  href={cvUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                >
+                  View CV
                 </a>
               )}
             </div>
