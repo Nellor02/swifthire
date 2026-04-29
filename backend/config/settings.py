@@ -44,6 +44,8 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
+    "cloudinary",
+    "cloudinary_storage",
 
     "accounts",
     "jobs",
@@ -51,8 +53,7 @@ INSTALLED_APPS = [
     "profiles",
     "saved_jobs",
     "companies",
-    "cloudinary",
-    "cloudinary_storage",
+    
 ]
 
 MIDDLEWARE = [
@@ -133,7 +134,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 STORAGES = {
     "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
     },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
