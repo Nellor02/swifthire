@@ -5,6 +5,7 @@ import { useState } from "react";
 import StatusCard from "../../components/StatusCard";
 import { useRouter } from "next/navigation";
 
+
 type AccountType = "seeker" | "employer";
 
 type SeekerForm = {
