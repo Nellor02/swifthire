@@ -2,7 +2,20 @@ import { clearStoredAuth } from "./auth";
 import { safeJson, extractErrorMessage } from "./apiHelpers";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://127.0.0.1:8000";
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
+  "http://127.0.0.1:8000";
+
+export function getApiBaseUrl(): string {
+  return API_BASE_URL;
+}
+
+export function apiUrl(path: string): string {
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+
+  return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -35,7 +48,7 @@ async function refreshAccessToken(): Promise<string | null> {
   if (!refresh) return null;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/token/refresh/`, {
+    const res = await fetch(apiUrl("/api/token/refresh/"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -67,17 +80,16 @@ export async function authFetch(
   const token = getAccessToken();
 
   const headers = new Headers(init.headers || {});
+
   if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
+
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const url =
-    input.startsWith("http://") || input.startsWith("https://")
-      ? input
-      : `${API_BASE_URL}${input.startsWith("/") ? input : `/${input}`}`;
+  const url = apiUrl(input);
 
   let response = await fetch(url, {
     ...init,
@@ -88,16 +100,25 @@ export async function authFetch(
     const newAccessToken = await refreshAccessToken();
 
     if (!newAccessToken) {
-      return new Response(JSON.stringify({ error: "Session expired. Please log in again." }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Session expired. Please log in again." }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     const retryHeaders = new Headers(init.headers || {});
-    if (!retryHeaders.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
+
+    if (
+      !retryHeaders.has("Content-Type") &&
+      init.body &&
+      !(init.body instanceof FormData)
+    ) {
       retryHeaders.set("Content-Type", "application/json");
     }
+
     retryHeaders.set("Authorization", `Bearer ${newAccessToken}`);
 
     response = await fetch(url, {
@@ -109,10 +130,13 @@ export async function authFetch(
       clearStoredAuth();
       redirectToLoginIfNeeded();
 
-      return new Response(JSON.stringify({ error: "Session expired. Please log in again." }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Session expired. Please log in again." }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
   }
 
@@ -129,20 +153,26 @@ export async function authFetch(
   return response;
 }
 
-export function getApiBaseUrl(): string {
-  return API_BASE_URL;
-}
-
-export function getFileUrl(filePath?: string | null) {
+export function getFileUrl(filePath?: string | null): string {
   if (!filePath) return "";
 
-  if (filePath.startsWith("http")) {
+  if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
     return filePath;
   }
 
-  const base =
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    "https://swifthire-backend-jj12.onrender.com";
+  return apiUrl(filePath);
+}
 
-  return `${base}${filePath.startsWith("/") ? filePath : `/${filePath}`}`;
+export async function safeFetch(
+  input: string,
+  init: RequestInit = {}
+): Promise<unknown> {
+  const res = await fetch(apiUrl(input), init);
+  const data = await safeJson(res);
+
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(data, "Request failed."));
+  }
+
+  return data;
 }
