@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "profiles",
     "saved_jobs",
     "companies",
+    "core",
     
 ]
 
