@@ -4,6 +4,7 @@ from .models import Job
 
 class JobSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source="company.name", read_only=True)
+    company_logo = serializers.ImageField(source="company.logo", read_only=True)
 
     class Meta:
         model = Job
@@ -11,6 +12,7 @@ class JobSerializer(serializers.ModelSerializer):
             "id",
             "company",
             "company_name",
+            "company_logo",
             "title",
             "description",
             "location",
@@ -24,5 +26,6 @@ class JobSerializer(serializers.ModelSerializer):
             "id",
             "company",
             "company_name",
+            "company_logo",
             "created_at",
         ]
