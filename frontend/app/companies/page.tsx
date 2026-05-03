@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import StatusCard from "../../components/StatusCard";
+import { getFileUrl } from "../../lib/api";
 
 type Company = {
   id: number;
@@ -14,6 +15,7 @@ type Company = {
   website: string;
   address: string;
   description: string;
+  logo?: string | null;
   jobs_count: number;
 };
 
@@ -135,51 +137,69 @@ export default function CompaniesPage() {
           />
         ) : (
           <div className="grid gap-4">
-            {filteredCompanies.map((company) => (
-              <div
-                key={company.id}
-                className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm"
-              >
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div className="flex-1">
-                    <Link
-                      href={`/companies/${company.id}`}
-                      className="text-2xl font-semibold text-blue-400 hover:underline"
-                    >
-                      {company.name}
-                    </Link>
+            {filteredCompanies.map((company) => {
+              const logoUrl = getFileUrl(company.logo);
 
-                    <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-300">
-                      <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                        Jobs: {company.jobs_count}
-                      </span>
+              return (
+                <div
+                  key={company.id}
+                  className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm"
+                >
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="flex flex-1 gap-4">
+                      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-sm font-bold text-slate-300">
+                        {logoUrl ? (
+                          <img
+                            src={logoUrl}
+                            alt={`${company.name} logo`}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          company.name.slice(0, 2).toUpperCase()
+                        )}
+                      </div>
 
-                      <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                        {company.address || "No address"}
-                      </span>
+                      <div className="flex-1">
+                        <Link
+                          href={`/companies/${company.id}`}
+                          className="text-2xl font-semibold text-blue-400 hover:underline"
+                        >
+                          {company.name}
+                        </Link>
+
+                        <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-300">
+                          <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                            Jobs: {company.jobs_count}
+                          </span>
+
+                          <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                            {company.address || "No address"}
+                          </span>
+                        </div>
+
+                        <div className="mt-4">
+                          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-300">
+                            About
+                          </h3>
+                          <p className="whitespace-pre-line text-slate-200">
+                            {truncateText(company.description)}
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="mt-4">
-                      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-300">
-                        About
-                      </h3>
-                      <p className="whitespace-pre-line text-slate-200">
-                        {truncateText(company.description)}
-                      </p>
+                    <div className="flex flex-wrap gap-3 md:ml-6">
+                      <Link
+                        href={`/companies/${company.id}`}
+                        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                      >
+                        View Company
+                      </Link>
                     </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-3 md:ml-6">
-                    <Link
-                      href={`/companies/${company.id}`}
-                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                    >
-                      View Company
-                    </Link>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

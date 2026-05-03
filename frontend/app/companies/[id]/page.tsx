@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import StatusCard from "../../../components/StatusCard";
 import { getStoredUser } from "../../../lib/auth";
-import { authFetch } from "../../../lib/api";
+import { authFetch, getFileUrl } from "../../../lib/api";
 
 type Company = {
   id: number;
@@ -17,6 +17,7 @@ type Company = {
   website: string;
   address: string;
   description: string;
+  logo?: string | null;
   jobs_count: number;
 };
 
@@ -258,15 +259,31 @@ export default function CompanyDetailPage() {
     );
   }
 
+  const companyLogoUrl = getFileUrl(company.logo);
+
   return (
     <main className="min-h-screen bg-slate-900 p-6">
       <div className="mx-auto max-w-6xl">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-4xl font-bold text-slate-100">{company.name}</h1>
-            <p className="mt-2 text-slate-300">
-              Explore this company and the jobs they are hiring for.
-            </p>
+          <div className="flex items-center gap-4">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 text-xl font-bold text-slate-300">
+              {companyLogoUrl ? (
+                <img
+                  src={companyLogoUrl}
+                  alt={`${company.name} logo`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                company.name.slice(0, 2).toUpperCase()
+              )}
+            </div>
+
+            <div>
+              <h1 className="text-4xl font-bold text-slate-100">{company.name}</h1>
+              <p className="mt-2 text-slate-300">
+                Explore this company and the jobs they are hiring for.
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-3">

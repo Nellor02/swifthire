@@ -5,12 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import StatusCard from "../../../components/StatusCard";
 import { getStoredUser } from "../../../lib/auth";
-import { authFetch } from "../../../lib/api";
+import { authFetch, getFileUrl } from "../../../lib/api";
 
 type Job = {
   id: number;
   company: number;
   company_name: string;
+  company_logo?: string | null;
   title: string;
   description: string;
   location: string;
@@ -209,20 +210,35 @@ export default function JobDetailPage() {
 
   const canApply = user?.role === "seeker";
   const isEmployerLike = user?.role === "employer" || user?.role === "admin";
+  const companyLogoUrl = getFileUrl(job.company_logo);
 
   return (
     <main className="min-h-screen bg-slate-900 p-6">
       <div className="mx-auto max-w-5xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-100">{job.title}</h1>
-            <div className="mt-2">
-              <Link
-                href={`/companies/${job.company}`}
-                className="text-lg text-blue-400 hover:underline"
-              >
-                {job.company_name}
-              </Link>
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-300">
+              {companyLogoUrl ? (
+                <img
+                  src={companyLogoUrl}
+                  alt={`${job.company_name} logo`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                job.company_name.slice(0, 2).toUpperCase()
+              )}
+            </div>
+
+            <div>
+              <h1 className="text-3xl font-bold text-slate-100">{job.title}</h1>
+              <div className="mt-2">
+                <Link
+                  href={`/companies/${job.company}`}
+                  className="text-lg text-blue-400 hover:underline"
+                >
+                  {job.company_name}
+                </Link>
+              </div>
             </div>
           </div>
 
