@@ -21,6 +21,7 @@ type ProfileData = {
   preferred_location: string;
   linkedin_url: string;
   portfolio_url: string;
+  profile_picture?: string | null;
   is_public: boolean;
 };
 
@@ -38,6 +39,7 @@ const emptyProfile: ProfileData = {
   preferred_location: "",
   linkedin_url: "",
   portfolio_url: "",
+  profile_picture: null,
   is_public: true,
 };
 
@@ -59,6 +61,7 @@ export default function ProfilePage() {
 
   const [profileExists, setProfileExists] = useState(false);
   const [form, setForm] = useState<ProfileData>(emptyProfile);
+  const [profilePictureFile, setProfilePictureFile] = useState<File | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -123,6 +126,7 @@ export default function ProfilePage() {
           preferred_location: data.preferred_location || "",
           linkedin_url: data.linkedin_url || "",
           portfolio_url: data.portfolio_url || "",
+          profile_picture: data.profile_picture || null,
           is_public: Boolean(data.is_public),
         });
         setLoading(false);
@@ -141,6 +145,11 @@ export default function ProfilePage() {
     }));
   }
 
+  function handleProfilePictureChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] || null;
+    setProfilePictureFile(file);
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
@@ -156,27 +165,30 @@ export default function ProfilePage() {
     try {
       const method = profileExists ? "PATCH" : "POST";
 
+      const payload = new FormData();
+
+      payload.append("full_name", form.full_name);
+      payload.append("headline", form.headline);
+      payload.append("bio", form.bio);
+      payload.append("location", form.location);
+      payload.append("phone", form.phone);
+      payload.append("skills", form.skills);
+      payload.append("experience_years", String(Number(form.experience_years) || 0));
+      payload.append("education", form.education);
+      payload.append("work_experience", form.work_experience);
+      payload.append("preferred_job_type", form.preferred_job_type);
+      payload.append("preferred_location", form.preferred_location);
+      payload.append("linkedin_url", form.linkedin_url);
+      payload.append("portfolio_url", form.portfolio_url);
+      payload.append("is_public", String(form.is_public));
+
+      if (profilePictureFile) {
+        payload.append("profile_picture", profilePictureFile);
+      }
+
       const res = await authFetch("http://127.0.0.1:8000/api/profiles/me/", {
         method,
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          full_name: form.full_name,
-          headline: form.headline,
-          bio: form.bio,
-          location: form.location,
-          phone: form.phone,
-          skills: form.skills,
-          experience_years: Number(form.experience_years) || 0,
-          education: form.education,
-          work_experience: form.work_experience,
-          preferred_job_type: form.preferred_job_type,
-          preferred_location: form.preferred_location,
-          linkedin_url: form.linkedin_url,
-          portfolio_url: form.portfolio_url,
-          is_public: form.is_public,
-        }),
+        body: payload,
       });
 
       const data = await parseResponseSafely(res);
@@ -193,7 +205,10 @@ export default function ProfilePage() {
       setForm((prev) => ({
         ...prev,
         id: data.id ?? prev.id,
+        profile_picture: data.profile_picture ?? prev.profile_picture,
       }));
+
+      setProfilePictureFile(null);
     } catch (err) {
       console.error(err);
       setError("Something went wrong while saving your profile.");
@@ -264,22 +279,23 @@ export default function ProfilePage() {
               Build your talent profile so employers can find you.
             </p>
           </div>
+
           <div className="flex flex-wrap gap-3">
             <Link
-                href="/profile/preview"
-                className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+              href="/profile/preview"
+              className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
             >
-                Preview Profile
+              Preview Profile
             </Link>
 
             <Link
-                href="/"
-                className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+              href="/"
+              className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
             >
-                Back to Home
+              Back to Home
             </Link>
-            </div>
-        </div>  
+          </div>
+        </div>
 
         <div className="space-y-6">
           {error && (
@@ -308,6 +324,43 @@ export default function ProfilePage() {
 
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-8 shadow-sm">
             <form className="space-y-6" onSubmit={handleSubmit}>
+              <div className="rounded-lg border border-slate-700 bg-slate-900 p-5">
+                <label className="mb-3 block text-sm font-medium text-slate-200">
+                  Profile Picture
+                </label>
+
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-slate-600 bg-slate-800 text-xl font-bold text-slate-300">
+                    {form.profile_picture ? (
+                      <img
+                        src={form.profile_picture}
+                        alt="Profile picture"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      "SH"
+                    )}
+                  </div>
+
+                  <div className="flex-1">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleProfilePictureChange}
+                      className="block w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 text-sm text-slate-100 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-blue-700"
+                    />
+                    <p className="mt-2 text-xs text-slate-400">
+                      Upload a clear square image. PNG or JPG recommended.
+                    </p>
+                    {profilePictureFile && (
+                      <p className="mt-2 text-xs text-emerald-300">
+                        Selected: {profilePictureFile.name}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-200">
                   Full Name

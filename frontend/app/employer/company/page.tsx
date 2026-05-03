@@ -16,6 +16,7 @@ type Company = {
   website: string;
   address: string;
   description: string;
+  logo?: string | null;
   jobs_count: number;
 };
 
@@ -31,6 +32,7 @@ type CompanyFormData = {
   website: string;
   address: string;
   description: string;
+  logo?: string | null;
 };
 
 async function parseResponseSafely(res: Response) {
@@ -88,7 +90,10 @@ export default function EmployerCompanyPage() {
     website: "",
     address: "",
     description: "",
+    logo: null,
   });
+
+  const [logoFile, setLogoFile] = useState<File | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -182,6 +187,7 @@ export default function EmployerCompanyPage() {
           website: data.website || "",
           address: data.address || "",
           description: data.description || "",
+          logo: data.logo || null,
         });
         setLoading(false);
       })
@@ -204,6 +210,11 @@ export default function EmployerCompanyPage() {
     }));
   }
 
+  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] || null;
+    setLogoFile(file);
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
@@ -211,12 +222,22 @@ export default function EmployerCompanyPage() {
     setSuccess("");
 
     try {
+      const payload = new FormData();
+
+      payload.append("name", formData.name);
+      payload.append("email", formData.email);
+      payload.append("phone", formData.phone);
+      payload.append("website", formData.website);
+      payload.append("address", formData.address);
+      payload.append("description", formData.description);
+
+      if (logoFile) {
+        payload.append("logo", logoFile);
+      }
+
       const res = await authFetch("http://127.0.0.1:8000/api/companies/me/", {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
+        body: payload,
       });
 
       const data = await parseResponseSafely(res);
@@ -235,8 +256,10 @@ export default function EmployerCompanyPage() {
         website: updated.website || "",
         address: updated.address || "",
         description: updated.description || "",
+        logo: updated.logo || null,
       });
 
+      setLogoFile(null);
       setSuccess("Company profile updated successfully.");
     } catch (err) {
       console.error(err);
@@ -365,6 +388,43 @@ export default function EmployerCompanyPage() {
             onSubmit={handleSubmit}
             className="space-y-6 rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm"
           >
+            <div className="rounded-lg border border-slate-700 bg-slate-900 p-5">
+              <label className="mb-3 block text-sm font-medium text-slate-200">
+                Company Logo
+              </label>
+
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-slate-600 bg-slate-800 text-xl font-bold text-slate-300">
+                  {formData.logo ? (
+                    <img
+                      src={formData.logo}
+                      alt="Company logo"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    "Logo"
+                  )}
+                </div>
+
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoChange}
+                    className="block w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 text-sm text-slate-100 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-blue-700"
+                  />
+                  <p className="mt-2 text-xs text-slate-400">
+                    Upload a square logo. PNG or JPG recommended.
+                  </p>
+                  {logoFile && (
+                    <p className="mt-2 text-xs text-emerald-300">
+                      Selected: {logoFile.name}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="grid gap-6 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-200">
