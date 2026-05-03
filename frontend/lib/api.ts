@@ -17,6 +17,10 @@ export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+function isFormDataBody(body: BodyInit | null | undefined): body is FormData {
+  return typeof FormData !== "undefined" && body instanceof FormData;
+}
+
 function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("access_token");
@@ -41,6 +45,20 @@ function redirectToLoginIfNeeded() {
   if (!publicPaths.includes(path)) {
     window.location.href = "/login";
   }
+}
+
+function buildHeaders(init: RequestInit, token?: string | null) {
+  const headers = new Headers(init.headers || {});
+
+  if (!headers.has("Content-Type") && init.body && !isFormDataBody(init.body)) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  return headers;
 }
 
 async function refreshAccessToken(): Promise<string | null> {
@@ -78,22 +96,11 @@ export async function authFetch(
   init: RequestInit = {}
 ): Promise<Response> {
   const token = getAccessToken();
-
-  const headers = new Headers(init.headers || {});
-
-  if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-
   const url = apiUrl(input);
 
   let response = await fetch(url, {
     ...init,
-    headers,
+    headers: buildHeaders(init, token),
   });
 
   if (response.status === 401) {
@@ -109,21 +116,9 @@ export async function authFetch(
       );
     }
 
-    const retryHeaders = new Headers(init.headers || {});
-
-    if (
-      !retryHeaders.has("Content-Type") &&
-      init.body &&
-      !(init.body instanceof FormData)
-    ) {
-      retryHeaders.set("Content-Type", "application/json");
-    }
-
-    retryHeaders.set("Authorization", `Bearer ${newAccessToken}`);
-
     response = await fetch(url, {
       ...init,
-      headers: retryHeaders,
+      headers: buildHeaders(init, newAccessToken),
     });
 
     if (response.status === 401) {
@@ -167,7 +162,11 @@ export async function safeFetch(
   input: string,
   init: RequestInit = {}
 ): Promise<unknown> {
-  const res = await fetch(apiUrl(input), init);
+  const res = await fetch(apiUrl(input), {
+    ...init,
+    headers: buildHeaders(init),
+  });
+
   const data = await safeJson(res);
 
   if (!res.ok) {
