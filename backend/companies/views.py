@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 
 from .models import Company
 from .serializers import CompanySerializer
@@ -31,6 +32,7 @@ class CompanyDetailAPIView(APIView):
 
 class MyCompanyAPIView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
 
     def get(self, request):
         if getattr(request.user, "role", None) not in ["employer", "admin"]:
