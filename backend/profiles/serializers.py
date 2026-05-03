@@ -32,6 +32,7 @@ class SeekerProfileSerializer(serializers.ModelSerializer):
             "preferred_location",
             "linkedin_url",
             "portfolio_url",
+            "profile_picture",
             "is_public",
             "created_at",
             "updated_at",

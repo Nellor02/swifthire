@@ -18,6 +18,7 @@ class CompanySerializer(serializers.ModelSerializer):
             "website",
             "address",
             "description",
+            "logo",
             "jobs_count",
         ]
         read_only_fields = [

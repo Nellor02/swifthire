@@ -14,6 +14,11 @@ class Company(models.Model):
     website = models.URLField(blank=True, default="")
     address = models.TextField(blank=True, default="")
     description = models.TextField(blank=True, default="")
+    logo = models.ImageField(
+    upload_to="companies/logos/",
+    blank=True,
+    null=True,
+    )
 
     def __str__(self):
         return self.name

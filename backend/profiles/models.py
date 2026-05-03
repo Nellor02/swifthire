@@ -15,6 +15,7 @@ class SeekerProfile(models.Model):
         on_delete=models.CASCADE,
         related_name="seeker_profile",
     )
+    
     full_name = models.CharField(max_length=255)
     headline = models.CharField(max_length=255, blank=True)
     bio = models.TextField(blank=True)
@@ -32,6 +33,11 @@ class SeekerProfile(models.Model):
     preferred_location = models.CharField(max_length=255, blank=True)
     linkedin_url = models.URLField(blank=True)
     portfolio_url = models.URLField(blank=True)
+    profile_picture = models.ImageField(
+    upload_to="profiles/pictures/",
+    blank=True,
+    null=True,
+    )
     is_public = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
