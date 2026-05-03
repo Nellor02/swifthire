@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getStoredUser } from "../../../lib/auth";
-import { authFetch } from "../../../lib/api";
+import { authFetch, getFileUrl } from "../../../lib/api";
 import StatusCard from "../../../components/StatusCard";
 
 type TalentProfile = {
@@ -24,6 +24,7 @@ type TalentProfile = {
   preferred_location: string;
   linkedin_url: string;
   portfolio_url: string;
+  profile_picture?: string | null;
   is_public: boolean;
   created_at: string;
   updated_at: string;
@@ -68,6 +69,12 @@ function parseSkills(skills: string) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function getInitials(name: string) {
+  const cleaned = name.trim();
+  if (!cleaned) return "SH";
+  return cleaned.slice(0, 2).toUpperCase();
 }
 
 export default function TalentDetailPage() {
@@ -121,7 +128,7 @@ export default function TalentDetailPage() {
     setError("");
     setNotFoundState(false);
 
-    authFetch(`http://127.0.0.1:8000/api/profiles/talent/${id}/`)
+    authFetch(`/api/profiles/talent/${id}/`)
       .then(async (res) => {
         const data = await parseResponseSafely(res);
 
@@ -160,7 +167,7 @@ export default function TalentDetailPage() {
       return;
     }
 
-    authFetch("http://127.0.0.1:8000/api/profiles/talent/shortlist/")
+    authFetch("/api/profiles/talent/shortlist/")
       .then(async (res) => {
         const data = await parseResponseSafely(res);
         if (!res.ok) {
@@ -187,12 +194,9 @@ export default function TalentDetailPage() {
     setError("");
 
     try {
-      const res = await authFetch(
-        `http://127.0.0.1:8000/api/profiles/talent/${profile.id}/shortlist/`,
-        {
-          method: isShortlisted ? "DELETE" : "POST",
-        }
-      );
+      const res = await authFetch(`/api/profiles/talent/${profile.id}/shortlist/`, {
+        method: isShortlisted ? "DELETE" : "POST",
+      });
 
       const data = await parseResponseSafely(res);
 
@@ -228,7 +232,7 @@ export default function TalentDetailPage() {
 
     try {
       const res = await authFetch(
-        `http://127.0.0.1:8000/api/profiles/talent/${profile.id}/start-conversation/`,
+        `/api/profiles/talent/${profile.id}/start-conversation/`,
         {
           method: "POST",
         }
@@ -331,6 +335,7 @@ export default function TalentDetailPage() {
   }
 
   const skills = parseSkills(profile.skills);
+  const profilePictureUrl = getFileUrl(profile.profile_picture);
 
   return (
     <main className="min-h-screen bg-slate-900 p-6">
@@ -372,36 +377,50 @@ export default function TalentDetailPage() {
         )}
 
         <div className="rounded-xl border border-slate-700 bg-slate-800 p-8 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <p className="mb-2 text-sm text-slate-400">Talent Profile</p>
+          <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+            <div className="flex flex-1 gap-5">
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-900 text-xl font-bold text-slate-300">
+                {profilePictureUrl ? (
+                  <img
+                    src={profilePictureUrl}
+                    alt={`${profile.full_name} profile picture`}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  getInitials(profile.full_name)
+                )}
+              </div>
 
-              <h1 className="text-3xl font-bold text-slate-100">
-                {profile.full_name}
-              </h1>
+              <div>
+                <p className="mb-2 text-sm text-slate-400">Talent Profile</p>
 
-              <p className="mt-2 text-slate-300">
-                {profile.headline || "No headline provided"}
-              </p>
+                <h1 className="text-3xl font-bold text-slate-100">
+                  {profile.full_name}
+                </h1>
 
-              <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-300">
-                <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                  Location: {profile.location || "Not specified"}
-                </span>
+                <p className="mt-2 text-slate-300">
+                  {profile.headline || "No headline provided"}
+                </p>
 
-                <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                  Experience: {profile.experience_years} year
-                  {profile.experience_years !== 1 ? "s" : ""}
-                </span>
+                <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-300">
+                  <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                    Location: {profile.location || "Not specified"}
+                  </span>
 
-                <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                  Preferred Job Type: {formatJobType(profile.preferred_job_type)}
-                </span>
+                  <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                    Experience: {profile.experience_years} year
+                    {profile.experience_years !== 1 ? "s" : ""}
+                  </span>
 
-                <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                  Preferred Location:{" "}
-                  {profile.preferred_location || "Not specified"}
-                </span>
+                  <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                    Preferred Job Type: {formatJobType(profile.preferred_job_type)}
+                  </span>
+
+                  <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                    Preferred Location:{" "}
+                    {profile.preferred_location || "Not specified"}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -418,8 +437,8 @@ export default function TalentDetailPage() {
                 {shortlistLoading
                   ? "Updating..."
                   : isShortlisted
-                  ? "✓ Shortlisted — Remove"
-                  : "+ Shortlist Candidate"}
+                    ? "✓ Shortlisted — Remove"
+                    : "+ Shortlist Candidate"}
               </button>
 
               <button
