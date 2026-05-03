@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import AuthStatus from "../components/AuthStatus";
 import Pagination from "../components/Pagination";
 import StatusCard from "../components/StatusCard";
-import { authFetch, getApiBaseUrl } from "../lib/api";
+import { authFetch, getApiBaseUrl, getFileUrl } from "../lib/api";
 import { getStoredUser } from "../lib/auth";
 
 type Job = {
@@ -15,6 +15,7 @@ type Job = {
   title: string;
   description?: string;
   company_name: string;
+  company_logo?: string | null;
   location: string;
   job_type: string;
   salary_min?: number | null;
@@ -495,7 +496,7 @@ export default function HomePage() {
 
         {debouncedSearch.trim() && (
           <p className="mb-4 text-sm text-slate-400">
-            Showing results for: <span className="text-blue-400">"{debouncedSearch}"</span>
+            Showing results for: <span className="text-blue-400">&quot;{debouncedSearch}&quot;</span>
           </p>
         )}
 
@@ -555,6 +556,7 @@ export default function HomePage() {
               {jobs.map((job) => {
                 const isSaved = savedJobIds.includes(job.id);
                 const existingApplication = applicationsByJobId.get(job.id);
+                const companyLogoUrl = getFileUrl(job.company_logo);
 
                 return (
                   <div
@@ -571,61 +573,75 @@ export default function HomePage() {
                     }}
                   >
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                      <div className="flex-1">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <h2 className="text-2xl font-semibold text-slate-100">
-                            {job.title}
-                          </h2>
-
-                          {existingApplication && (
-                            <span
-                              className={`rounded px-3 py-1 text-xs font-semibold uppercase tracking-wide ${getApplicationStatusClasses(
-                                existingApplication.status
-                              )}`}
-                            >
-                              {formatApplicationStatus(existingApplication.status)}
-                            </span>
+                      <div className="flex flex-1 gap-4">
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-sm font-bold text-slate-300">
+                          {companyLogoUrl ? (
+                            <img
+                              src={companyLogoUrl}
+                              alt={`${job.company_name} logo`}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            job.company_name.slice(0, 2).toUpperCase()
                           )}
                         </div>
 
-                        <div className="mt-1">
-                          <Link
-                            href={`/companies/${job.company}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-slate-300 hover:text-blue-400 hover:underline"
-                          >
-                            {job.company_name}
-                          </Link>
-                        </div>
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <h2 className="text-2xl font-semibold text-slate-100">
+                              {job.title}
+                            </h2>
 
-                        <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-300">
-                          <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                            {job.location || "No location"}
-                          </span>
+                            {existingApplication && (
+                              <span
+                                className={`rounded px-3 py-1 text-xs font-semibold uppercase tracking-wide ${getApplicationStatusClasses(
+                                  existingApplication.status
+                                )}`}
+                              >
+                                {formatApplicationStatus(existingApplication.status)}
+                              </span>
+                            )}
+                          </div>
 
-                          <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                            {formatJobType(job.job_type)}
-                          </span>
+                          <div className="mt-1">
+                            <Link
+                              href={`/companies/${job.company}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-slate-300 hover:text-blue-400 hover:underline"
+                            >
+                              {job.company_name}
+                            </Link>
+                          </div>
 
-                          <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                            Salary: {formatSalary(job)}
-                          </span>
-                        </div>
+                          <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-300">
+                            <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                              {job.location || "No location"}
+                            </span>
 
-                        <div className="mt-4">
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-                              Description
-                            </h3>
+                            <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                              {formatJobType(job.job_type)}
+                            </span>
 
-                            <span className="text-xs text-blue-400">
-                              Click card for full details
+                            <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                              Salary: {formatSalary(job)}
                             </span>
                           </div>
 
-                          <p className="whitespace-pre-line text-slate-200">
-                            {truncateText(job.description)}
-                          </p>
+                          <div className="mt-4">
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+                                Description
+                              </h3>
+
+                              <span className="text-xs text-blue-400">
+                                Click card for full details
+                              </span>
+                            </div>
+
+                            <p className="whitespace-pre-line text-slate-200">
+                              {truncateText(job.description)}
+                            </p>
+                          </div>
                         </div>
                       </div>
 
