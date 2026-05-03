@@ -2,7 +2,7 @@ import "./globals.css";
 import ApiFetchRedirect from "../components/ApiFetchRedirect";
 
 export const metadata = {
-  title: "SwaziJobs",
+  title: "SwiftHire",
   description: "Job platform for seekers and employers",
 };
 
