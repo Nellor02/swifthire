@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { authFetch } from "../../lib/api";
+import { authFetch, getFileUrl } from "../../lib/api";
 import { getStoredUser } from "../../lib/auth";
 import StatusCard from "../../components/StatusCard";
 
@@ -16,6 +16,7 @@ type Job = {
   id: number;
   company: number;
   company_name: string;
+  company_logo?: string | null;
   title: string;
   description?: string;
   location: string;
@@ -135,20 +136,20 @@ export default function SavedJobsPage() {
     }
 
     Promise.all([
-      authFetch("http://127.0.0.1:8000/api/saved-jobs/").then(async (res) => {
+      authFetch("/api/saved-jobs/").then(async (res) => {
         const data = await parseResponseSafely(res);
         if (!res.ok) {
           throw new Error(data?.error || "Failed to load saved jobs.");
         }
-        return Array.isArray(data) ? (data as SavedJobItem[]) : [];
+        return Array.isArray(data) ? data : [];
       }),
-      fetch("http://127.0.0.1:8000/api/jobs/?page=1&page_size=100").then(async (res) => {
+      fetch("/api/jobs/?page=1&page_size=100").then(async (res) => {
         const data = await parseResponseSafely(res);
         if (!res.ok) {
           throw new Error(data?.error || "Failed to load jobs.");
         }
-        if (Array.isArray(data)) return data as Job[];
-        return Array.isArray(data.results) ? (data.results as Job[]) : [];
+        if (Array.isArray(data)) return data;
+        return Array.isArray(data.results) ? data.results : [];
       }),
     ])
       .then(([savedData, jobsData]) => {
@@ -171,20 +172,19 @@ export default function SavedJobsPage() {
 
     setApplicationsLoading(true);
 
-    authFetch("http://127.0.0.1:8000/api/applications/my/")
+    authFetch("/api/applications/my/")
       .then(async (res) => {
         const data = await parseResponseSafely(res);
         if (!res.ok) {
           throw new Error(data?.error || "Failed to load applications.");
         }
-        return Array.isArray(data) ? (data as ApplicationItem[]) : [];
+        return Array.isArray(data) ? data : [];
       })
       .then((data) => {
         setApplications(data);
         setApplicationsLoading(false);
       })
-      .catch((err) => {
-        console.error(err);
+      .catch(() => {
         setApplications([]);
         setApplicationsLoading(false);
       });
@@ -217,7 +217,7 @@ export default function SavedJobsPage() {
     setError("");
 
     try {
-      const res = await authFetch(`http://127.0.0.1:8000/api/saved-jobs/${jobId}/`, {
+      const res = await authFetch(`/api/saved-jobs/${jobId}/`, {
         method: "DELETE",
       });
 
@@ -229,36 +229,15 @@ export default function SavedJobsPage() {
 
       setSavedJobs((prev) => prev.filter((item) => item.job !== jobId));
     } catch (err) {
-      console.error(err);
-      setError(
-        err instanceof Error ? err.message : "Failed to remove saved job."
-      );
+      setError(err instanceof Error ? err.message : "Failed to remove saved job.");
     } finally {
       setActionLoadingId(null);
     }
   }
 
-  if (!userChecked) {
-    return null;
-  }
+  if (!userChecked) return null;
 
-  if (!user) {
-    return (
-      <main className="min-h-screen bg-slate-900 p-6">
-        <div className="mx-auto max-w-5xl">
-          <StatusCard
-            title="Login Required"
-            message="You must be logged in to view saved jobs."
-            variant="warning"
-            actionHref="/login"
-            actionLabel="Go to Login"
-          />
-        </div>
-      </main>
-    );
-  }
-
-  if (user.role !== "seeker") {
+  if (!user || user.role !== "seeker") {
     return (
       <main className="min-h-screen bg-slate-900 p-6">
         <div className="mx-auto max-w-5xl">
@@ -277,164 +256,58 @@ export default function SavedJobsPage() {
   return (
     <main className="min-h-screen bg-slate-900 p-6">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-100">Saved Jobs</h1>
-            <p className="mt-1 text-slate-300">
-              Keep track of opportunities you want to revisit.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              Browse Jobs
-            </Link>
-
-            <Link
-              href="/my-applications"
-              className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
-            >
-              My Applications
-            </Link>
-          </div>
-        </div>
-
-        {error && (
-          <div className="mb-6">
-            <StatusCard title="Error" message={error} variant="error" />
-          </div>
-        )}
+        <h1 className="text-3xl font-bold text-slate-100 mb-6">Saved Jobs</h1>
 
         {loading ? (
-          <StatusCard
-            title="Loading Saved Jobs"
-            message="Please wait while your saved jobs are loading."
-            variant="info"
-          />
+          <StatusCard title="Loading" message="Loading saved jobs..." variant="info" />
         ) : savedJobCards.length === 0 ? (
-          <StatusCard
-            title="No Saved Jobs Yet"
-            message="Save jobs you are interested in so you can return to them later."
-            variant="neutral"
-            actionHref="/"
-            actionLabel="Browse Jobs"
-          />
+          <StatusCard title="No Saved Jobs" message="Save jobs to see them here." variant="neutral" />
         ) : (
           <div className="space-y-4">
             {savedJobCards.map(({ saved, job }) => {
+              const logoUrl = getFileUrl(job.company_logo);
               const existingApplication = applicationsByJobId.get(job.id);
 
               return (
-                <div
-                  key={saved.id}
-                  className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm"
-                >
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div className="flex-1">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <Link
-                          href={`/jobs/${job.id}`}
-                          className="text-2xl font-semibold text-blue-400 hover:underline"
-                        >
-                          {job.title}
-                        </Link>
-
-                        {existingApplication && (
-                          <span
-                            className={`rounded px-3 py-1 text-xs font-semibold uppercase tracking-wide ${getApplicationStatusClasses(
-                              existingApplication.status
-                            )}`}
-                          >
-                            {formatApplicationStatus(existingApplication.status)}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="mt-2">
-                        <Link
-                          href={`/companies/${job.company}`}
-                          className="text-slate-300 hover:text-blue-400 hover:underline"
-                        >
-                          {job.company_name}
-                        </Link>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-300">
-                        <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                          {job.location || "No location"}
-                        </span>
-
-                        <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                          {formatJobType(job.job_type)}
-                        </span>
-
-                        <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                          Salary: {formatSalary(job)}
-                        </span>
-
-                        {saved.saved_at && (
-                          <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                            Saved: {new Date(saved.saved_at).toLocaleString()}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="mt-4">
-                        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-300">
-                          Description
-                        </h3>
-                        <p className="whitespace-pre-line text-slate-200">
-                          {truncateText(job.description)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-3 md:ml-6">
-                      <Link
-                        href={`/jobs/${job.id}`}
-                        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                      >
-                        View Job
-                      </Link>
-
-                      <Link
-                        href={`/companies/${job.company}`}
-                        className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
-                      >
-                        View Company
-                      </Link>
-
-                      {applicationsLoading ? (
-                        <span className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-300">
-                          Checking...
-                        </span>
-                      ) : existingApplication ? (
-                        <Link
-                          href={`/my-applications/${existingApplication.id}`}
-                          className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"
-                        >
-                          Applied
-                        </Link>
+                <div key={saved.id} className="bg-slate-800 p-6 rounded-xl border border-slate-700">
+                  <div className="flex gap-4">
+                    {/* LOGO */}
+                    <div className="h-16 w-16 rounded-xl overflow-hidden bg-slate-900 border border-slate-700 flex items-center justify-center">
+                      {logoUrl ? (
+                        <img src={logoUrl} className="h-full w-full object-cover" />
                       ) : (
-                        <Link
-                          href={`/jobs/${job.id}/apply`}
-                          className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-                        >
-                          Apply Now
-                        </Link>
+                        job.company_name.slice(0, 2).toUpperCase()
                       )}
-
-                      <button
-                        onClick={() => handleRemoveSaved(job.id)}
-                        disabled={actionLoadingId === job.id}
-                        className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                      >
-                        {actionLoadingId === job.id ? "Removing..." : "Remove"}
-                      </button>
                     </div>
+
+                    <div className="flex-1">
+                      <Link href={`/jobs/${job.id}`} className="text-xl text-blue-400">
+                        {job.title}
+                      </Link>
+
+                      <p className="text-slate-300">{job.company_name}</p>
+
+                      <p className="text-slate-400 mt-2">
+                        {formatJobType(job.job_type)} • {job.location}
+                      </p>
+
+                      <p className="text-slate-400">
+                        Salary: {formatSalary(job)}
+                      </p>
+
+                      {existingApplication && (
+                        <span className={`mt-2 inline-block px-2 py-1 text-xs ${getApplicationStatusClasses(existingApplication.status)}`}>
+                          {formatApplicationStatus(existingApplication.status)}
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => handleRemoveSaved(job.id)}
+                      className="bg-red-600 px-3 py-2 rounded text-white"
+                    >
+                      Remove
+                    </button>
                   </div>
                 </div>
               );
