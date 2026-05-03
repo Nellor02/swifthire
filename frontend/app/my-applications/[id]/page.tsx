@@ -4,18 +4,20 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { getStoredUser } from "../../../lib/auth";
-import { authFetch } from "../../../lib/api";
+import { authFetch, getFileUrl } from "../../../lib/api";
 import StatusCard from "../../../components/StatusCard";
-import { getFileUrl } from "../../../lib/api";
 
 type ApplicationDetail = {
   id: number;
   job: number;
   job_title: string;
+  company_name?: string;
+  company_logo?: string | null;
   applicant: number;
   applicant_username: string;
   applicant_email: string;
   applicant_profile_id?: number | null;
+  applicant_profile_picture?: string | null;
   cover_letter: string;
   cv?: string | null;
   status: string;
@@ -28,6 +30,7 @@ type JobDetail = {
   title: string;
   description?: string;
   company_name?: string;
+  company_logo?: string | null;
   location?: string;
   job_type?: string;
   salary_min?: number | null;
@@ -134,7 +137,7 @@ export default function SeekerApplicationDetailPage() {
     setLoading(true);
     setError("");
 
-    authFetch(`http://127.0.0.1:8000/api/applications/my/${applicationId}/`)
+    authFetch(`/api/applications/my/${applicationId}/`)
       .then(async (res) => {
         const data = await parseResponseSafely(res);
 
@@ -222,6 +225,12 @@ export default function SeekerApplicationDetailPage() {
 
   const backToApplicationsHref = "/my-applications";
   const backToJobHref = application ? `/jobs/${application.job}` : "/";
+  const applicationLogoUrl = getFileUrl(application?.company_logo);
+  const jobLogoUrl = getFileUrl(jobDetail?.company_logo);
+  const displayLogoUrl = applicationLogoUrl || jobLogoUrl;
+  const companyName =
+    application?.company_name || jobDetail?.company_name || "Company";
+  const companyInitials = companyName.slice(0, 2).toUpperCase();
 
   return (
     <main className="min-h-screen bg-slate-900 p-6">
@@ -278,50 +287,64 @@ export default function SeekerApplicationDetailPage() {
         ) : (
           <div className="space-y-6">
             <div className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm">
-              <p className="text-sm text-slate-400">
-                Application #{application.id}
-              </p>
+              <div className="flex flex-col gap-4 md:flex-row md:items-start">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-sm font-bold text-slate-300">
+                  {displayLogoUrl ? (
+                    <img
+                      src={displayLogoUrl}
+                      alt={`${companyName} logo`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    companyInitials
+                  )}
+                </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <h2 className="text-2xl font-semibold text-slate-100">
-                  {application.job_title}
-                </h2>
+                <div className="flex-1">
+                  <p className="text-sm text-slate-400">
+                    Application #{application.id}
+                  </p>
 
-                <span
-                  className={`rounded px-3 py-1 text-sm font-semibold uppercase tracking-wide ${getStatusClasses(
-                    application.status
-                  )}`}
-                >
-                  {formatStatus(application.status)}
-                </span>
-              </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <h2 className="text-2xl font-semibold text-slate-100">
+                      {application.job_title}
+                    </h2>
 
-              <p className="mt-2 text-slate-300">
-                Submitted on {new Date(application.created_at).toLocaleString()}
-              </p>
+                    <span
+                      className={`rounded px-3 py-1 text-sm font-semibold uppercase tracking-wide ${getStatusClasses(
+                        application.status
+                      )}`}
+                    >
+                      {formatStatus(application.status)}
+                    </span>
+                  </div>
 
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Link
-                  href={backToJobHref}
-                  className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-                >
-                  View Job
-                </Link>
+                  <p className="mt-2 text-slate-300">{companyName}</p>
 
-                {application.cv && (
-                  <a
-                    href={
-                      application.cv.startsWith("http")
-                      ? application.cv
-                      : `${process.env.NEXT_PUBLIC_API_BASE_URL}${application.cv}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-                  >
-                    View Uploaded CV
-                  </a>
-                )}
+                  <p className="mt-2 text-slate-300">
+                    Submitted on {new Date(application.created_at).toLocaleString()}
+                  </p>
+
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <Link
+                      href={backToJobHref}
+                      className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                    >
+                      View Job
+                    </Link>
+
+                    {application.cv && (
+                      <a
+                        href={getFileUrl(application.cv)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                      >
+                        View Uploaded CV
+                      </a>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -353,13 +376,29 @@ export default function SeekerApplicationDetailPage() {
                 <p className="text-slate-300">Loading job details...</p>
               ) : jobDetail ? (
                 <div>
-                  <h4 className="text-lg font-semibold text-slate-100">
-                    {jobDetail.title}
-                  </h4>
+                  <div className="flex gap-4">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-sm font-bold text-slate-300">
+                      {jobLogoUrl ? (
+                        <img
+                          src={jobLogoUrl}
+                          alt={`${jobDetail.company_name || "Company"} logo`}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        (jobDetail.company_name || "SH").slice(0, 2).toUpperCase()
+                      )}
+                    </div>
 
-                  <p className="mt-2 text-slate-300">
-                    {jobDetail.company_name || "Company not specified"}
-                  </p>
+                    <div className="flex-1">
+                      <h4 className="text-lg font-semibold text-slate-100">
+                        {jobDetail.title}
+                      </h4>
+
+                      <p className="mt-2 text-slate-300">
+                        {jobDetail.company_name || "Company not specified"}
+                      </p>
+                    </div>
+                  </div>
 
                   <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-300">
                     <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
