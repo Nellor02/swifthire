@@ -3,18 +3,20 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getStoredUser } from "../../lib/auth";
-import { authFetch } from "../../lib/api";
+import { authFetch, getFileUrl } from "../../lib/api";
 import StatusCard from "../../components/StatusCard";
-import { getFileUrl } from "../../lib/api"; // adjust path if needed
 
 type Application = {
   id: number;
   job: number;
   job_title: string;
+  company_name?: string;
+  company_logo?: string | null;
   applicant: number;
   applicant_username: string;
   applicant_email: string;
   applicant_profile_id?: number | null;
+  applicant_profile_picture?: string | null;
   cover_letter: string;
   cv?: string | null;
   status: string;
@@ -92,7 +94,7 @@ export default function MyApplicationsPage() {
       return;
     }
 
-    authFetch("http://127.0.0.1:8000/api/applications/my/")
+    authFetch("/api/applications/my/")
       .then(async (res) => {
         const data = await parseResponseSafely(res);
 
@@ -199,82 +201,109 @@ export default function MyApplicationsPage() {
           />
         ) : (
           <div className="space-y-4">
-            {applications.map((application) => (
-              <div
-                key={application.id}
-                className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm"
-              >
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div className="flex-1">
-                    <p className="text-sm text-slate-400">
-                      Application #{application.id}
-                    </p>
+            {applications.map((application) => {
+              const companyLogoUrl = getFileUrl(application.company_logo);
+              const companyInitials = (
+                application.company_name ||
+                application.job_title ||
+                "SH"
+              )
+                .slice(0, 2)
+                .toUpperCase();
 
-                    <Link
-                      href={`/my-applications/${application.id}`}
-                      className="mt-2 block text-2xl font-semibold text-blue-400 hover:underline"
-                    >
-                      {application.job_title}
-                    </Link>
+              return (
+                <div
+                  key={application.id}
+                  className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm"
+                >
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="flex flex-1 gap-4">
+                      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-sm font-bold text-slate-300">
+                        {companyLogoUrl ? (
+                          <img
+                            src={companyLogoUrl}
+                            alt={`${application.company_name || "Company"} logo`}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          companyInitials
+                        )}
+                      </div>
 
-                    <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-300">
-                      <span
-                        className={`rounded px-3 py-1 font-semibold uppercase tracking-wide ${getStatusClasses(
-                          application.status
-                        )}`}
-                      >
-                        {formatStatus(application.status)}
-                      </span>
+                      <div className="flex-1">
+                        <p className="text-sm text-slate-400">
+                          Application #{application.id}
+                        </p>
 
-                      <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                        Applied on:{" "}
-                        {new Date(application.created_at).toLocaleString()}
-                      </span>
+                        <Link
+                          href={`/my-applications/${application.id}`}
+                          className="mt-2 block text-2xl font-semibold text-blue-400 hover:underline"
+                        >
+                          {application.job_title}
+                        </Link>
+
+                        {application.company_name && (
+                          <p className="mt-1 text-sm text-slate-300">
+                            {application.company_name}
+                          </p>
+                        )}
+
+                        <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-300">
+                          <span
+                            className={`rounded px-3 py-1 font-semibold uppercase tracking-wide ${getStatusClasses(
+                              application.status
+                            )}`}
+                          >
+                            {formatStatus(application.status)}
+                          </span>
+
+                          <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                            Applied on:{" "}
+                            {new Date(application.created_at).toLocaleString()}
+                          </span>
+                        </div>
+
+                        <div className="mt-4">
+                          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-300">
+                            Cover Letter Preview
+                          </h3>
+                          <p className="whitespace-pre-line text-slate-200">
+                            {truncateText(application.cover_letter)}
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="mt-4">
-                      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-300">
-                        Cover Letter Preview
-                      </h3>
-                      <p className="whitespace-pre-line text-slate-200">
-                        {truncateText(application.cover_letter)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-3 md:ml-6">
-                    <Link
-                      href={`/my-applications/${application.id}`}
-                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                    >
-                      View Details
-                    </Link>
-
-                    <Link
-                      href={`/jobs/${application.job}`}
-                      className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
-                    >
-                      View Job
-                    </Link>
-
-                    {application.cv && (
-                      <a
-                        href={
-                          application.cv.startsWith("http")
-                          ? application.cv
-                          : `${process.env.NEXT_PUBLIC_API_BASE_URL}${application.cv}`
-                        }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                    <div className="flex flex-wrap gap-3 md:ml-6">
+                      <Link
+                        href={`/my-applications/${application.id}`}
+                        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                       >
-                        View Uploaded CV
-                      </a>
-                    )}
+                        View Details
+                      </Link>
+
+                      <Link
+                        href={`/jobs/${application.job}`}
+                        className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+                      >
+                        View Job
+                      </Link>
+
+                      {application.cv && (
+                        <a
+                          href={getFileUrl(application.cv)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                        >
+                          View Uploaded CV
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
