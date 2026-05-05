@@ -4,9 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { getStoredUser } from "../../../../lib/auth";
-import { authFetch } from "../../../../lib/api";
+import { authFetch, getFileUrl } from "../../../../lib/api";
 import StatusCard from "../../../../components/StatusCard";
-import { getFileUrl } from "../../../../lib/api"; // adjust path if needed
 
 type ApplicationDetail = {
   id: number;
@@ -16,6 +15,7 @@ type ApplicationDetail = {
   applicant_username: string;
   applicant_email: string;
   applicant_profile_id?: number | null;
+  applicant_profile_picture?: string | null;
   cover_letter: string;
   cv?: string | null;
   status: string;
@@ -100,6 +100,12 @@ function formatSalary(job: JobDetail) {
   return "Not specified";
 }
 
+function getInitials(name: string) {
+  const cleaned = name.trim();
+  if (!cleaned) return "SH";
+  return cleaned.slice(0, 2).toUpperCase();
+}
+
 export default function EmployerApplicantDetailPage() {
   const params = useParams<{ id: string | string[] }>();
   const rawId = params?.id;
@@ -150,7 +156,7 @@ export default function EmployerApplicantDetailPage() {
     setLoading(true);
     setError("");
 
-    authFetch(`http://127.0.0.1:8000/api/applications/employer/${applicationId}/`)
+    authFetch(`/api/applications/employer/${applicationId}/`)
       .then(async (res) => {
         const data = await parseResponseSafely(res);
 
@@ -181,7 +187,7 @@ export default function EmployerApplicantDetailPage() {
 
     setJobLoading(true);
 
-    fetch(`http://127.0.0.1:8000/api/jobs/${application.job}/`)
+    fetch(`/api/jobs/${application.job}/`)
       .then(async (res) => {
         const data = await parseResponseSafely(res);
 
@@ -209,16 +215,10 @@ export default function EmployerApplicantDetailPage() {
     setSuccess("");
 
     try {
-      const res = await authFetch(
-        `http://127.0.0.1:8000/api/applications/${application.id}/status/`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
+      const res = await authFetch(`/api/applications/${application.id}/status/`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
 
       const data = await parseResponseSafely(res);
 
@@ -250,16 +250,10 @@ export default function EmployerApplicantDetailPage() {
     setSuccess("");
 
     try {
-      const res = await authFetch(
-        `http://127.0.0.1:8000/api/applications/${application.id}/notes/`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ employer_notes: notesDraft }),
-        }
-      );
+      const res = await authFetch(`/api/applications/${application.id}/notes/`, {
+        method: "PATCH",
+        body: JSON.stringify({ employer_notes: notesDraft }),
+      });
 
       const data = await parseResponseSafely(res);
 
@@ -289,7 +283,7 @@ export default function EmployerApplicantDetailPage() {
 
     try {
       const res = await authFetch(
-        `http://127.0.0.1:8000/api/profiles/talent/${application.applicant_profile_id}/start-conversation/`,
+        `/api/profiles/talent/${application.applicant_profile_id}/start-conversation/`,
         {
           method: "POST",
         }
@@ -310,9 +304,7 @@ export default function EmployerApplicantDetailPage() {
     }
   }
 
-  if (!userChecked) {
-    return null;
-  }
+  if (!userChecked) return null;
 
   if (!isLoggedIn) {
     return (
@@ -353,6 +345,9 @@ export default function EmployerApplicantDetailPage() {
   const backToJobHref = application
     ? `/jobs/${application.job}`
     : "/employer/jobs";
+
+  const applicantPictureUrl = getFileUrl(application?.applicant_profile_picture);
+  const applicantName = application?.applicant_username || "Applicant";
 
   return (
     <main className="min-h-screen bg-slate-900 p-6">
@@ -415,45 +410,93 @@ export default function EmployerApplicantDetailPage() {
         ) : (
           <div className="space-y-6">
             <div className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm">
-              <p className="text-sm text-slate-400">
-                Application #{application.id}
-              </p>
+              <div className="flex flex-col gap-5 md:flex-row md:items-start">
+                <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-900 text-xl font-bold text-slate-300">
+                  {applicantPictureUrl ? (
+                    <img
+                      src={applicantPictureUrl}
+                      alt={`${applicantName} profile picture`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    getInitials(applicantName)
+                  )}
+                </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                {application.applicant_profile_id ? (
-                  <Link
-                    href={`/talent/${application.applicant_profile_id}`}
-                    className="text-2xl font-semibold text-blue-400 hover:underline"
-                  >
-                    {application.applicant_username}
-                  </Link>
-                ) : (
-                  <h2 className="text-2xl font-semibold text-slate-100">
-                    {application.applicant_username}
-                  </h2>
-                )}
+                <div className="flex-1">
+                  <p className="text-sm text-slate-400">
+                    Application #{application.id}
+                  </p>
 
-                <span
-                  className={`rounded px-3 py-1 text-sm font-semibold uppercase tracking-wide ${getStatusClasses(
-                    application.status
-                  )}`}
-                >
-                  {formatStatus(application.status)}
-                </span>
-              </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    {application.applicant_profile_id ? (
+                      <Link
+                        href={`/talent/${application.applicant_profile_id}`}
+                        className="text-2xl font-semibold text-blue-400 hover:underline"
+                      >
+                        {application.applicant_username}
+                      </Link>
+                    ) : (
+                      <h2 className="text-2xl font-semibold text-slate-100">
+                        {application.applicant_username}
+                      </h2>
+                    )}
 
-              <p className="mt-2 text-slate-300">
-                {application.applicant_email || "No email provided"}
-              </p>
+                    <span
+                      className={`rounded px-3 py-1 text-sm font-semibold uppercase tracking-wide ${getStatusClasses(
+                        application.status
+                      )}`}
+                    >
+                      {formatStatus(application.status)}
+                    </span>
+                  </div>
 
-              <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-300">
-                <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                  Job: {application.job_title}
-                </span>
+                  <p className="mt-2 text-slate-300">
+                    {application.applicant_email || "No email provided"}
+                  </p>
 
-                <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                  Applied at: {new Date(application.created_at).toLocaleString()}
-                </span>
+                  <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-300">
+                    <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                      Job: {application.job_title}
+                    </span>
+
+                    <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                      Applied at:{" "}
+                      {new Date(application.created_at).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    {application.applicant_profile_id && (
+                      <button
+                        onClick={handleStartConversation}
+                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                      >
+                        Message Applicant
+                      </button>
+                    )}
+
+                    {application.applicant_profile_id && (
+                      <Link
+                        href={`/talent/${application.applicant_profile_id}`}
+                        className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+                      >
+                        View Talent Profile
+                      </Link>
+                    )}
+
+                    {application.cv && (
+                      <a
+                        href={getFileUrl(application.cv)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                      >
+                        View Uploaded CV
+                      </a>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -577,39 +620,6 @@ export default function EmployerApplicantDetailPage() {
                 >
                   Reject
                 </button>
-
-                {application.applicant_profile_id && (
-                  <button
-                    onClick={handleStartConversation}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-                  >
-                    Message Applicant
-                  </button>
-                )}
-
-                {application.applicant_profile_id && (
-                  <Link
-                    href={`/talent/${application.applicant_profile_id}`}
-                    className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
-                  >
-                    View Talent Profile
-                  </Link>
-                )}
-
-                {application.cv && (
-                  <a
-                    href={
-                      application.cv.startsWith("http")
-                        ? application.cv
-                        : `${process.env.NEXT_PUBLIC_API_BASE_URL}${application.cv}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-                  >
-                    View Uploaded CV
-                  </a>
-                )}
               </div>
             </div>
           </div>

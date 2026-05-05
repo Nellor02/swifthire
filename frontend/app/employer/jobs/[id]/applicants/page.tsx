@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getStoredUser } from "../../../../../lib/auth";
-import { authFetch } from "../../../../../lib/api";
+import { authFetch, getFileUrl } from "../../../../../lib/api";
 import StatusCard from "../../../../../components/StatusCard";
-import { getFileUrl } from "../../../../../lib/api"; // adjust path if needed
 
 type Applicant = {
   id: number;
@@ -15,6 +14,7 @@ type Applicant = {
   applicant_username: string;
   applicant_email: string;
   applicant_profile_id?: number | null;
+  applicant_profile_picture?: string | null;
   cover_letter: string;
   cv?: string | null;
   status: string;
@@ -62,6 +62,12 @@ function formatStatus(status: string) {
   }
 }
 
+function getInitials(name: string) {
+  const cleaned = name.trim();
+  if (!cleaned) return "SH";
+  return cleaned.slice(0, 2).toUpperCase();
+}
+
 export default function EmployerApplicantsPage({
   params,
 }: {
@@ -107,7 +113,7 @@ export default function EmployerApplicantsPage({
         setJobId(resolvedParams.id);
 
         const res = await authFetch(
-          `http://127.0.0.1:8000/api/applications/jobs/${resolvedParams.id}/applicants/`
+          `/api/applications/jobs/${resolvedParams.id}/applicants/`
         );
 
         const data = await parseResponseSafely(res);
@@ -142,16 +148,10 @@ export default function EmployerApplicantsPage({
     setUpdatingId(applicationId);
 
     try {
-      const res = await authFetch(
-        `http://127.0.0.1:8000/api/applications/${applicationId}/status/`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
+      const res = await authFetch(`/api/applications/${applicationId}/status/`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
 
       const data = await parseResponseSafely(res);
 
@@ -180,7 +180,7 @@ export default function EmployerApplicantsPage({
 
     try {
       const res = await authFetch(
-        `http://127.0.0.1:8000/api/profiles/talent/${profileId}/start-conversation/`,
+        `/api/profiles/talent/${profileId}/start-conversation/`,
         {
           method: "POST",
         }
@@ -201,9 +201,7 @@ export default function EmployerApplicantsPage({
     }
   }
 
-  if (!userChecked) {
-    return null;
-  }
+  if (!userChecked) return null;
 
   if (!isLoggedIn) {
     return (
@@ -301,118 +299,139 @@ export default function EmployerApplicantsPage({
           />
         ) : (
           <div className="space-y-4">
-            {applications.map((application) => (
-              <div
-                key={application.id}
-                className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm"
-              >
-                <p className="text-sm text-slate-400">
-                  Application #{application.id}
-                </p>
+            {applications.map((application) => {
+              const profilePictureUrl = getFileUrl(
+                application.applicant_profile_picture
+              );
 
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <Link
-                    href={`/employer/applicants/${application.id}`}
-                    className="text-xl font-semibold text-blue-400 hover:underline"
-                  >
-                    {application.applicant_username}
-                  </Link>
+              return (
+                <div
+                  key={application.id}
+                  className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-sm"
+                >
+                  <div className="flex gap-4">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-900 text-sm font-bold text-slate-300">
+                      {profilePictureUrl ? (
+                        <img
+                          src={profilePictureUrl}
+                          alt={`${application.applicant_username} profile picture`}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        getInitials(application.applicant_username)
+                      )}
+                    </div>
 
-                  {application.applicant_profile_id && (
-                    <>
-                      <button
-                        onClick={() =>
-                          handleStartConversation(application.applicant_profile_id as number)
-                        }
-                        className="rounded-lg bg-indigo-600 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700"
-                      >
-                        Message Applicant
-                      </button>
+                    <div className="flex-1">
+                      <p className="text-sm text-slate-400">
+                        Application #{application.id}
+                      </p>
 
-                      <Link
-                        href={`/talent/${application.applicant_profile_id}`}
-                        className="rounded-lg bg-slate-700 px-3 py-1 text-sm font-medium text-slate-100 hover:bg-slate-600"
-                      >
-                        View Talent Profile
-                      </Link>
-                    </>
-                  )}
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <Link
+                          href={`/employer/applicants/${application.id}`}
+                          className="text-xl font-semibold text-blue-400 hover:underline"
+                        >
+                          {application.applicant_username}
+                        </Link>
+
+                        {application.applicant_profile_id && (
+                          <>
+                            <button
+                              onClick={() =>
+                                handleStartConversation(
+                                  application.applicant_profile_id as number
+                                )
+                              }
+                              className="rounded-lg bg-indigo-600 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700"
+                            >
+                              Message Applicant
+                            </button>
+
+                            <Link
+                              href={`/talent/${application.applicant_profile_id}`}
+                              className="rounded-lg bg-slate-700 px-3 py-1 text-sm font-medium text-slate-100 hover:bg-slate-600"
+                            >
+                              View Talent Profile
+                            </Link>
+                          </>
+                        )}
+                      </div>
+
+                      <p className="mt-1 text-slate-300">
+                        {application.applicant_email || "No email provided"}
+                      </p>
+
+                      <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-300">
+                        <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
+                          Job: {application.job_title}
+                        </span>
+
+                        <span
+                          className={`rounded px-3 py-1 font-semibold uppercase tracking-wide ${getStatusClasses(
+                            application.status
+                          )}`}
+                        >
+                          Status: {formatStatus(application.status)}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => updateStatus(application.id, "reviewed")}
+                          disabled={updatingId === application.id}
+                          className="rounded bg-yellow-600 px-3 py-1 text-sm text-white hover:bg-yellow-700 disabled:opacity-50"
+                        >
+                          Mark Reviewed
+                        </button>
+
+                        <button
+                          onClick={() => updateStatus(application.id, "accepted")}
+                          disabled={updatingId === application.id}
+                          className="rounded bg-green-600 px-3 py-1 text-sm text-white hover:bg-green-700 disabled:opacity-50"
+                        >
+                          Accept
+                        </button>
+
+                        <button
+                          onClick={() => updateStatus(application.id, "rejected")}
+                          disabled={updatingId === application.id}
+                          className="rounded bg-red-600 px-3 py-1 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+                      </div>
+
+                      <div className="mt-4">
+                        <h3 className="mb-2 text-lg font-semibold text-slate-100">
+                          Cover Letter
+                        </h3>
+
+                        <p className="text-slate-200">
+                          {application.cover_letter || "No cover letter provided."}
+                        </p>
+                      </div>
+
+                      {application.cv && (
+                        <a
+                          href={getFileUrl(application.cv)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-4 inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                        >
+                          View Uploaded CV
+                        </a>
+                      )}
+
+                      <p className="mt-4 text-sm text-slate-400">
+                        Applied at:{" "}
+                        {new Date(application.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-
-                <p className="mt-1 text-slate-300">
-                  {application.applicant_email || "No email provided"}
-                </p>
-
-                <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-300">
-                  <span className="rounded border border-slate-600 bg-slate-700 px-3 py-1">
-                    Job: {application.job_title}
-                  </span>
-
-                  <span
-                    className={`rounded px-3 py-1 font-semibold uppercase tracking-wide ${getStatusClasses(
-                      application.status
-                    )}`}
-                  >
-                    Status: {formatStatus(application.status)}
-                  </span>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => updateStatus(application.id, "reviewed")}
-                    disabled={updatingId === application.id}
-                    className="rounded bg-yellow-600 px-3 py-1 text-sm text-white hover:bg-yellow-700 disabled:opacity-50"
-                  >
-                    Mark Reviewed
-                  </button>
-
-                  <button
-                    onClick={() => updateStatus(application.id, "accepted")}
-                    disabled={updatingId === application.id}
-                    className="rounded bg-green-600 px-3 py-1 text-sm text-white hover:bg-green-700 disabled:opacity-50"
-                  >
-                    Accept
-                  </button>
-
-                  <button
-                    onClick={() => updateStatus(application.id, "rejected")}
-                    disabled={updatingId === application.id}
-                    className="rounded bg-red-600 px-3 py-1 text-sm text-white hover:bg-red-700 disabled:opacity-50"
-                  >
-                    Reject
-                  </button>
-                </div>
-
-                <div className="mt-4">
-                  <h3 className="mb-2 text-lg font-semibold text-slate-100">
-                    Cover Letter
-                  </h3>
-
-                  <p className="text-slate-200">
-                    {application.cover_letter || "No cover letter provided."}
-                  </p>
-                </div>
-
-                {application.cv && (
-                  <a
-                    href={
-                      application.cv.startsWith("http")
-                      ? application.cv
-                      : `${process.env.NEXT_PUBLIC_API_BASE_URL}${application.cv}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-                  >
-                    View Uploaded CV
-                  </a>
-                )}
-
-                <p className="mt-4 text-sm text-slate-400">
-                  Applied at: {new Date(application.created_at).toLocaleString()}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
