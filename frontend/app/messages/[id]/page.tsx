@@ -3,13 +3,19 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { authFetch } from "../../../lib/api";
+import { authFetch, getFileUrl } from "../../../lib/api";
 import { getStoredUser } from "../../../lib/auth";
 import StatusCard from "../../../components/StatusCard";
 
 type StoredUser = {
   username: string;
   role: string;
+};
+
+type CandidateProfile = {
+  id: number;
+  full_name?: string;
+  profile_picture?: string | null;
 };
 
 type Message = {
@@ -25,6 +31,7 @@ type ConversationDetail = {
   id: number;
   employer_username: string;
   seeker_username: string;
+  candidate_profile?: CandidateProfile | null;
   messages: Message[];
 };
 
@@ -46,6 +53,12 @@ function formatDate(dateString?: string) {
   if (Number.isNaN(date.getTime())) return "Unknown time";
 
   return date.toLocaleString();
+}
+
+function getInitials(name?: string) {
+  const cleaned = (name || "").trim();
+  if (!cleaned) return "SH";
+  return cleaned.slice(0, 2).toUpperCase();
 }
 
 export default function MessageThreadPage() {
@@ -103,16 +116,10 @@ export default function MessageThreadPage() {
     setSending(true);
 
     try {
-      const res = await authFetch(
-        `/api/profiles/messages/${conversationId}/send/`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ body: messageInput }),
-        }
-      );
+      const res = await authFetch(`/api/profiles/messages/${conversationId}/send/`, {
+        method: "POST",
+        body: JSON.stringify({ body: messageInput.trim() }),
+      });
 
       const data = await parseResponseSafely(res);
 
@@ -121,7 +128,7 @@ export default function MessageThreadPage() {
       }
 
       setMessageInput("");
-      await loadConversation(); // refresh chat
+      await loadConversation();
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to send message.");
@@ -134,10 +141,20 @@ export default function MessageThreadPage() {
     if (!conversation || !user) return "";
 
     if (user.role === "employer" || user.role === "admin") {
-      return conversation.seeker_username;
+      return conversation.candidate_profile?.full_name || conversation.seeker_username;
     }
 
     return conversation.employer_username;
+  }, [conversation, user]);
+
+  const otherAvatarUrl = useMemo(() => {
+    if (!conversation || !user) return "";
+
+    if (user.role === "employer" || user.role === "admin") {
+      return getFileUrl(conversation.candidate_profile?.profile_picture);
+    }
+
+    return "";
   }, [conversation, user]);
 
   if (!userChecked) return null;
@@ -162,13 +179,27 @@ export default function MessageThreadPage() {
     <main className="min-h-screen bg-slate-900 p-6">
       <div className="mx-auto max-w-4xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-100">
-              {otherUser ? `Chat with ${otherUser}` : "Conversation"}
-            </h1>
-            <p className="mt-1 text-slate-300">
-              Send and receive messages in real time.
-            </p>
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-900 text-sm font-bold text-slate-300">
+              {otherAvatarUrl ? (
+                <img
+                  src={otherAvatarUrl}
+                  alt={`${otherUser || "User"} avatar`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                getInitials(otherUser)
+              )}
+            </div>
+
+            <div>
+              <h1 className="text-3xl font-bold text-slate-100">
+                {otherUser ? `Chat with ${otherUser}` : "Conversation"}
+              </h1>
+              <p className="mt-1 text-slate-300">
+                Send and receive messages.
+              </p>
+            </div>
           </div>
 
           <Link
@@ -203,7 +234,6 @@ export default function MessageThreadPage() {
           />
         ) : (
           <>
-            {/* MESSAGE LIST */}
             <div className="mb-6 space-y-4 rounded-xl border border-slate-700 bg-slate-800 p-4">
               {conversation.messages.length === 0 ? (
                 <p className="text-slate-400">No messages yet.</p>
@@ -214,10 +244,24 @@ export default function MessageThreadPage() {
                   return (
                     <div
                       key={msg.id}
-                      className={`flex ${
+                      className={`flex items-end gap-3 ${
                         isMine ? "justify-end" : "justify-start"
                       }`}
                     >
+                      {!isMine && (
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-900 text-xs font-bold text-slate-300">
+                          {otherAvatarUrl ? (
+                            <img
+                              src={otherAvatarUrl}
+                              alt={`${msg.sender_username} avatar`}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            getInitials(msg.sender_username)
+                          )}
+                        </div>
+                      )}
+
                       <div
                         className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                           isMine
@@ -225,34 +269,45 @@ export default function MessageThreadPage() {
                             : "bg-slate-700 text-slate-100"
                         }`}
                       >
-                        <div className="text-xs mb-1 opacity-80">
+                        <div className="mb-1 text-xs opacity-80">
                           {isMine ? "You" : msg.sender_username}
                         </div>
 
                         <p className="whitespace-pre-line">{msg.body}</p>
 
-                        <p className="text-xs mt-2 opacity-70 text-right">
+                        <p className="mt-2 text-right text-xs opacity-70">
                           {formatDate(msg.created_at)}
                         </p>
                       </div>
+
+                      {isMine && (
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-blue-500 bg-blue-700 text-xs font-bold text-white">
+                          You
+                        </div>
+                      )}
                     </div>
                   );
                 })
               )}
             </div>
 
-            {/* SEND MESSAGE */}
             <div className="flex gap-2">
               <input
                 value={messageInput}
                 onChange={(e) => setMessageInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
                 placeholder="Type your message..."
-                className="flex-1 rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-slate-100 outline-none"
+                className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-blue-500"
               />
 
               <button
                 onClick={handleSendMessage}
-                disabled={sending}
+                disabled={sending || !messageInput.trim()}
                 className="rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {sending ? "Sending..." : "Send"}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { authFetch } from "../../lib/api";
+import { authFetch, getFileUrl } from "../../lib/api";
 import { getStoredUser } from "../../lib/auth";
 import StatusCard from "../../components/StatusCard";
 
@@ -18,6 +18,12 @@ type LastMessage = {
   created_at?: string;
 };
 
+type CandidateProfile = {
+  id: number;
+  full_name?: string;
+  profile_picture?: string | null;
+};
+
 type Conversation = {
   id: number;
   employer: number;
@@ -26,6 +32,7 @@ type Conversation = {
   seeker_username: string;
   other_user_username?: string;
   other_user_role?: string;
+  candidate_profile?: CandidateProfile | null;
   last_message: LastMessage | null;
   unread_count: number;
   created_at: string;
@@ -45,10 +52,8 @@ async function parseResponseSafely(res: Response) {
 
 function formatDate(dateString?: string) {
   if (!dateString) return "Unknown date";
-
   const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) return "Unknown date";
-
   return date.toLocaleString();
 }
 
@@ -58,26 +63,38 @@ function truncateText(text?: string, maxLength = 140) {
   return `${text.slice(0, maxLength)}...`;
 }
 
+function getInitials(name?: string) {
+  const cleaned = (name || "").trim();
+  if (!cleaned) return "SH";
+  return cleaned.slice(0, 2).toUpperCase();
+}
+
 function getConversationTitle(conversation: Conversation, user: StoredUser) {
   if (conversation.other_user_username) return conversation.other_user_username;
 
   if (user.role === "employer" || user.role === "admin") {
-    return conversation.seeker_username || "Seeker";
+    return conversation.candidate_profile?.full_name || conversation.seeker_username || "Seeker";
   }
 
   return conversation.employer_username || "Employer";
 }
 
 function getConversationSubtitle(conversation: Conversation, user: StoredUser) {
-  if (conversation.other_user_role) {
-    return `with ${conversation.other_user_role}`;
-  }
+  if (conversation.other_user_role) return `with ${conversation.other_user_role}`;
 
   if (user.role === "employer" || user.role === "admin") {
     return "Candidate conversation";
   }
 
   return "Employer conversation";
+}
+
+function getConversationAvatarUrl(conversation: Conversation, user: StoredUser) {
+  if (user.role === "employer" || user.role === "admin") {
+    return getFileUrl(conversation.candidate_profile?.profile_picture);
+  }
+
+  return "";
 }
 
 export default function MessagesPage() {
@@ -139,9 +156,7 @@ export default function MessagesPage() {
     [conversations]
   );
 
-  if (!userChecked) {
-    return null;
-  }
+  if (!userChecked) return null;
 
   if (!user) {
     return (
@@ -208,6 +223,7 @@ export default function MessagesPage() {
             {conversations.map((conversation) => {
               const title = getConversationTitle(conversation, user);
               const subtitle = getConversationSubtitle(conversation, user);
+              const avatarUrl = getConversationAvatarUrl(conversation, user);
               const preview = conversation.last_message?.body || "No messages yet.";
               const sender = conversation.last_message?.sender_username;
               const date =
@@ -224,37 +240,51 @@ export default function MessagesPage() {
                   }`}
                 >
                   <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div className="flex-1">
-                      <div className="mb-3 flex flex-wrap items-center gap-3">
-                        <h2 className="text-xl font-semibold text-slate-100">
-                          {title}
-                        </h2>
-
-                        {isUnread && (
-                          <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white">
-                            {conversation.unread_count} unread
-                          </span>
+                    <div className="flex flex-1 gap-4">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-900 text-sm font-bold text-slate-300">
+                        {avatarUrl ? (
+                          <img
+                            src={avatarUrl}
+                            alt={`${title} avatar`}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          getInitials(title)
                         )}
                       </div>
 
-                      <p className="text-sm text-slate-400">{subtitle}</p>
+                      <div className="flex-1">
+                        <div className="mb-3 flex flex-wrap items-center gap-3">
+                          <h2 className="text-xl font-semibold text-slate-100">
+                            {title}
+                          </h2>
 
-                      <p className="mt-3 text-slate-300">
-                        {sender ? (
-                          <>
-                            <span className="font-medium text-slate-200">
-                              {sender}:
-                            </span>{" "}
-                            {truncateText(preview)}
-                          </>
-                        ) : (
-                          truncateText(preview)
-                        )}
-                      </p>
+                          {isUnread && (
+                            <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white">
+                              {conversation.unread_count} unread
+                            </span>
+                          )}
+                        </div>
 
-                      <p className="mt-3 text-sm text-slate-400">
-                        {formatDate(date)}
-                      </p>
+                        <p className="text-sm text-slate-400">{subtitle}</p>
+
+                        <p className="mt-3 text-slate-300">
+                          {sender ? (
+                            <>
+                              <span className="font-medium text-slate-200">
+                                {sender}:
+                              </span>{" "}
+                              {truncateText(preview)}
+                            </>
+                          ) : (
+                            truncateText(preview)
+                          )}
+                        </p>
+
+                        <p className="mt-3 text-sm text-slate-400">
+                          {formatDate(date)}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap gap-3">
