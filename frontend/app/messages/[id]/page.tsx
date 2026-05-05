@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { authFetch, getFileUrl } from "../../../lib/api";
 import { getStoredUser } from "../../../lib/auth";
@@ -83,13 +83,15 @@ export default function MessageThreadPage() {
   const rawId = params?.id;
   const conversationId = Array.isArray(rawId) ? rawId[0] : rawId;
 
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const previousMessageCountRef = useRef(0);
+
   const [userChecked, setUserChecked] = useState(false);
   const [user, setUser] = useState<StoredUser | null>(null);
 
-  const [conversation, setConversation] = useState<ConversationDetail | null>(
-    null
-  );
-  const [loading, setLoading] = useState(true);
+  const [conversation, setConversation] = useState<ConversationDetail | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
   const [messageInput, setMessageInput] = useState("");
@@ -101,11 +103,14 @@ export default function MessageThreadPage() {
     setUserChecked(true);
   }, []);
 
-  async function loadConversation() {
+  async function loadConversation(options?: { silent?: boolean }) {
     if (!conversationId) return;
 
-    setLoading(true);
-    setError("");
+    if (options?.silent) {
+      setRefreshing(true);
+    } else {
+      setInitialLoading(true);
+    }
 
     try {
       const res = await authFetch(`/api/profiles/messages/${conversationId}/`);
@@ -116,34 +121,52 @@ export default function MessageThreadPage() {
       }
 
       setConversation(data);
+      setError("");
     } catch (err) {
       console.error(err);
-      setError(
-        err instanceof Error ? err.message : "Could not load conversation."
-      );
+      if (!options?.silent) {
+        setError(
+          err instanceof Error ? err.message : "Could not load conversation."
+        );
+      }
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setRefreshing(false);
     }
   }
 
   useEffect(() => {
     if (!userChecked || !user || !conversationId) return;
+
     loadConversation();
+
+    const intervalId = window.setInterval(() => {
+      loadConversation({ silent: true });
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
   }, [userChecked, user, conversationId]);
 
+  useEffect(() => {
+    const currentCount = conversation?.messages.length || 0;
+
+    if (currentCount !== previousMessageCountRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      previousMessageCountRef.current = currentCount;
+    }
+  }, [conversation?.messages.length]);
+
   async function handleSendMessage() {
-    if (!messageInput.trim()) return;
+    if (!messageInput.trim() || sending) return;
 
     setSending(true);
+    setError("");
 
     try {
-      const res = await authFetch(
-        `/api/profiles/messages/${conversationId}/send/`,
-        {
-          method: "POST",
-          body: JSON.stringify({ body: messageInput.trim() }),
-        }
-      );
+      const res = await authFetch(`/api/profiles/messages/${conversationId}/send/`, {
+        method: "POST",
+        body: JSON.stringify({ body: messageInput.trim() }),
+      });
 
       const data = await parseResponseSafely(res);
 
@@ -152,7 +175,7 @@ export default function MessageThreadPage() {
       }
 
       setMessageInput("");
-      await loadConversation();
+      await loadConversation({ silent: true });
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to send message.");
@@ -169,9 +192,7 @@ export default function MessageThreadPage() {
     }
 
     if (user.role === "employer" || user.role === "admin") {
-      return (
-        conversation.candidate_profile?.full_name || conversation.seeker_username
-      );
+      return conversation.candidate_profile?.full_name || conversation.seeker_username;
     }
 
     return conversation.employer_username;
@@ -233,7 +254,9 @@ export default function MessageThreadPage() {
               <h1 className="text-3xl font-bold text-slate-100">
                 {otherUser ? `Chat with ${otherUser}` : "Conversation"}
               </h1>
-              <p className="mt-1 text-slate-300">Send and receive messages.</p>
+              <p className="mt-1 text-slate-300">
+                {refreshing ? "Checking for new messages..." : "Send and receive messages."}
+              </p>
             </div>
           </div>
 
@@ -245,7 +268,7 @@ export default function MessageThreadPage() {
           </Link>
         </div>
 
-        {loading ? (
+        {initialLoading ? (
           <StatusCard
             title="Loading Conversation"
             message="Please wait while messages load."
@@ -269,7 +292,7 @@ export default function MessageThreadPage() {
           />
         ) : (
           <>
-            <div className="mb-6 space-y-4 rounded-xl border border-slate-700 bg-slate-800 p-4">
+            <div className="mb-6 max-h-[60vh] space-y-4 overflow-y-auto rounded-xl border border-slate-700 bg-slate-800 p-4">
               {conversation.messages.length === 0 ? (
                 <p className="text-slate-400">No messages yet.</p>
               ) : (
@@ -333,10 +356,12 @@ export default function MessageThreadPage() {
                   );
                 })
               )}
+
+              <div ref={bottomRef} />
             </div>
 
             <div className="flex gap-2">
-              <input
+              <textarea
                 value={messageInput}
                 onChange={(e) => setMessageInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -346,17 +371,22 @@ export default function MessageThreadPage() {
                   }
                 }}
                 placeholder="Type your message..."
-                className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-blue-500"
+                rows={2}
+                className="flex-1 resize-none rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-blue-500"
               />
 
               <button
                 onClick={handleSendMessage}
                 disabled={sending || !messageInput.trim()}
-                className="rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700 disabled:opacity-50"
+                className="self-end rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {sending ? "Sending..." : "Send"}
               </button>
             </div>
+
+            <p className="mt-2 text-xs text-slate-500">
+              Press Enter to send. Press Shift + Enter for a new line.
+            </p>
           </>
         )}
       </div>

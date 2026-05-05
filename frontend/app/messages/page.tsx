@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { authFetch, getFileUrl } from "../../lib/api";
 import { getStoredUser } from "../../lib/auth";
 import StatusCard from "../../components/StatusCard";
@@ -15,6 +15,10 @@ type LastMessage = {
   id?: number;
   body?: string;
   sender_username?: string;
+  sender_role?: string;
+  sender_profile_picture?: string | null;
+  sender_company_logo?: string | null;
+  sender_avatar?: string | null;
   created_at?: string;
 };
 
@@ -28,10 +32,13 @@ type Conversation = {
   id: number;
   employer: number;
   employer_username: string;
+  employer_logo?: string | null;
   seeker: number;
   seeker_username: string;
+  seeker_profile_picture?: string | null;
   other_user_username?: string;
   other_user_role?: string;
+  other_user_avatar?: string | null;
   candidate_profile?: CandidateProfile | null;
   last_message: LastMessage | null;
   unread_count: number;
@@ -73,7 +80,11 @@ function getConversationTitle(conversation: Conversation, user: StoredUser) {
   if (conversation.other_user_username) return conversation.other_user_username;
 
   if (user.role === "employer" || user.role === "admin") {
-    return conversation.candidate_profile?.full_name || conversation.seeker_username || "Seeker";
+    return (
+      conversation.candidate_profile?.full_name ||
+      conversation.seeker_username ||
+      "Seeker"
+    );
   }
 
   return conversation.employer_username || "Employer";
@@ -90,42 +101,47 @@ function getConversationSubtitle(conversation: Conversation, user: StoredUser) {
 }
 
 function getConversationAvatarUrl(conversation: Conversation, user: StoredUser) {
-  if (user.role === "employer" || user.role === "admin") {
-    return getFileUrl(conversation.candidate_profile?.profile_picture);
+  if (conversation.other_user_avatar) {
+    return getFileUrl(conversation.other_user_avatar);
   }
 
-  return "";
+  if (user.role === "employer" || user.role === "admin") {
+    return getFileUrl(
+      conversation.seeker_profile_picture ||
+        conversation.candidate_profile?.profile_picture
+    );
+  }
+
+  return getFileUrl(conversation.employer_logo);
 }
 
 export default function MessagesPage() {
   const [userChecked, setUserChecked] = useState(false);
   const [user, setUser] = useState<StoredUser | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const storedUser = getStoredUser();
-    setUser(storedUser);
-    setUserChecked(true);
+  const loadConversations = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!user) return;
 
-    if (!storedUser) {
-      setLoading(false);
-      return;
-    }
+      if (options?.silent) {
+        setRefreshing(true);
+      } else {
+        setInitialLoading(true);
+      }
 
-    authFetch("/api/profiles/messages/")
-      .then(async (res) => {
+      try {
+        const res = await authFetch("/api/profiles/messages/");
         const data = await parseResponseSafely(res);
 
         if (!res.ok) {
           throw new Error(data?.error || "Could not load messages.");
         }
 
-        return data;
-      })
-      .then((data) => {
-        const rows = Array.isArray(data)
+        const rows: Conversation[] = Array.isArray(data)
           ? data
           : Array.isArray(data?.results)
             ? data.results
@@ -138,14 +154,51 @@ export default function MessagesPage() {
         });
 
         setConversations(sortedRows);
-        setLoading(false);
-      })
-      .catch((err) => {
+        setError("");
+      } catch (err) {
         console.error(err);
-        setError(err instanceof Error ? err.message : "Could not load messages.");
-        setLoading(false);
-      });
+
+        if (!options?.silent) {
+          setError(err instanceof Error ? err.message : "Could not load messages.");
+        }
+      } finally {
+        setInitialLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [user]
+  );
+
+  useEffect(() => {
+    const storedUser = getStoredUser();
+    setUser(storedUser);
+    setUserChecked(true);
+
+    if (!storedUser) {
+      setInitialLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    if (!userChecked || !user) return;
+
+    loadConversations();
+
+    const intervalId = window.setInterval(() => {
+      loadConversations({ silent: true });
+    }, 10000);
+
+    function handleFocus() {
+      loadConversations({ silent: true });
+    }
+
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [userChecked, user, loadConversations]);
 
   const unreadCount = useMemo(
     () =>
@@ -188,17 +241,32 @@ export default function MessagesPage() {
                 ? `You have ${unreadCount} unread message${unreadCount !== 1 ? "s" : ""}.`
                 : "Review your conversations with candidates and employers."}
             </p>
+            {refreshing && (
+              <p className="mt-1 text-xs text-slate-500">
+                Checking for new conversations...
+              </p>
+            )}
           </div>
 
-          <Link
-            href={backHref}
-            className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
-          >
-            Back
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => loadConversations({ silent: true })}
+              disabled={refreshing}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+
+            <Link
+              href={backHref}
+              className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+            >
+              Back
+            </Link>
+          </div>
         </div>
 
-        {loading ? (
+        {initialLoading ? (
           <StatusCard
             title="Loading Messages"
             message="Please wait while your conversations are loading."
