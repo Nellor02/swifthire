@@ -22,6 +22,10 @@ type Message = {
   id: number;
   sender: number;
   sender_username: string;
+  sender_role?: string;
+  sender_profile_picture?: string | null;
+  sender_company_logo?: string | null;
+  sender_avatar?: string | null;
   body: string;
   created_at: string;
   is_read: boolean;
@@ -30,7 +34,12 @@ type Message = {
 type ConversationDetail = {
   id: number;
   employer_username: string;
+  employer_logo?: string | null;
   seeker_username: string;
+  seeker_profile_picture?: string | null;
+  other_user_username?: string;
+  other_user_role?: string;
+  other_user_avatar?: string | null;
   candidate_profile?: CandidateProfile | null;
   messages: Message[];
 };
@@ -61,6 +70,14 @@ function getInitials(name?: string) {
   return cleaned.slice(0, 2).toUpperCase();
 }
 
+function getMessageAvatarUrl(message: Message) {
+  return getFileUrl(
+    message.sender_avatar ||
+      message.sender_profile_picture ||
+      message.sender_company_logo
+  );
+}
+
 export default function MessageThreadPage() {
   const params = useParams<{ id: string | string[] }>();
   const rawId = params?.id;
@@ -69,7 +86,9 @@ export default function MessageThreadPage() {
   const [userChecked, setUserChecked] = useState(false);
   const [user, setUser] = useState<StoredUser | null>(null);
 
-  const [conversation, setConversation] = useState<ConversationDetail | null>(null);
+  const [conversation, setConversation] = useState<ConversationDetail | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -99,7 +118,9 @@ export default function MessageThreadPage() {
       setConversation(data);
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : "Could not load conversation.");
+      setError(
+        err instanceof Error ? err.message : "Could not load conversation."
+      );
     } finally {
       setLoading(false);
     }
@@ -116,10 +137,13 @@ export default function MessageThreadPage() {
     setSending(true);
 
     try {
-      const res = await authFetch(`/api/profiles/messages/${conversationId}/send/`, {
-        method: "POST",
-        body: JSON.stringify({ body: messageInput.trim() }),
-      });
+      const res = await authFetch(
+        `/api/profiles/messages/${conversationId}/send/`,
+        {
+          method: "POST",
+          body: JSON.stringify({ body: messageInput.trim() }),
+        }
+      );
 
       const data = await parseResponseSafely(res);
 
@@ -140,8 +164,14 @@ export default function MessageThreadPage() {
   const otherUser = useMemo(() => {
     if (!conversation || !user) return "";
 
+    if (conversation.other_user_username) {
+      return conversation.other_user_username;
+    }
+
     if (user.role === "employer" || user.role === "admin") {
-      return conversation.candidate_profile?.full_name || conversation.seeker_username;
+      return (
+        conversation.candidate_profile?.full_name || conversation.seeker_username
+      );
     }
 
     return conversation.employer_username;
@@ -150,11 +180,18 @@ export default function MessageThreadPage() {
   const otherAvatarUrl = useMemo(() => {
     if (!conversation || !user) return "";
 
-    if (user.role === "employer" || user.role === "admin") {
-      return getFileUrl(conversation.candidate_profile?.profile_picture);
+    if (conversation.other_user_avatar) {
+      return getFileUrl(conversation.other_user_avatar);
     }
 
-    return "";
+    if (user.role === "employer" || user.role === "admin") {
+      return getFileUrl(
+        conversation.seeker_profile_picture ||
+          conversation.candidate_profile?.profile_picture
+      );
+    }
+
+    return getFileUrl(conversation.employer_logo);
   }, [conversation, user]);
 
   if (!userChecked) return null;
@@ -196,9 +233,7 @@ export default function MessageThreadPage() {
               <h1 className="text-3xl font-bold text-slate-100">
                 {otherUser ? `Chat with ${otherUser}` : "Conversation"}
               </h1>
-              <p className="mt-1 text-slate-300">
-                Send and receive messages.
-              </p>
+              <p className="mt-1 text-slate-300">Send and receive messages.</p>
             </div>
           </div>
 
@@ -240,6 +275,7 @@ export default function MessageThreadPage() {
               ) : (
                 conversation.messages.map((msg) => {
                   const isMine = msg.sender_username === user.username;
+                  const messageAvatarUrl = getMessageAvatarUrl(msg);
 
                   return (
                     <div
@@ -250,9 +286,9 @@ export default function MessageThreadPage() {
                     >
                       {!isMine && (
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-900 text-xs font-bold text-slate-300">
-                          {otherAvatarUrl ? (
+                          {messageAvatarUrl ? (
                             <img
-                              src={otherAvatarUrl}
+                              src={messageAvatarUrl}
                               alt={`${msg.sender_username} avatar`}
                               className="h-full w-full object-cover"
                             />
@@ -281,8 +317,16 @@ export default function MessageThreadPage() {
                       </div>
 
                       {isMine && (
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-blue-500 bg-blue-700 text-xs font-bold text-white">
-                          You
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-blue-500 bg-blue-700 text-xs font-bold text-white">
+                          {messageAvatarUrl ? (
+                            <img
+                              src={messageAvatarUrl}
+                              alt="Your avatar"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            "You"
+                          )}
                         </div>
                       )}
                     </div>
