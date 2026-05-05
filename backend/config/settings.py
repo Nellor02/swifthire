@@ -42,6 +42,9 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
+    # 🔥 Channels
+    "channels",
+
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
@@ -55,7 +58,6 @@ INSTALLED_APPS = [
     "saved_jobs",
     "companies",
     "core",
-    
 ]
 
 MIDDLEWARE = [
@@ -90,6 +92,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
+# 🔥 Channels ASGI
+ASGI_APPLICATION = "config.asgi.application"
+
+# ======================
+# DATABASE
+# ======================
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
@@ -108,6 +117,27 @@ else:
         }
     }
 
+# ======================
+# CHANNELS / REDIS
+# ======================
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [REDIS_URL],
+        },
+    },
+}
+
+# ======================
+# AUTH
+# ======================
+
+AUTH_USER_MODEL = "accounts.User"
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
@@ -123,10 +153,18 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# ======================
+# INTERNATIONALIZATION
+# ======================
+
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "Africa/Mbabane"
 USE_I18N = True
 USE_TZ = True
+
+# ======================
+# STATIC / MEDIA
+# ======================
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -145,13 +183,21 @@ STORAGES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-AUTH_USER_MODEL = "accounts.User"
+DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
+
+# ======================
+# DRF
+# ======================
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
 }
+
+# ======================
+# SECURITY
+# ======================
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
@@ -165,6 +211,10 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv(
     "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", "False"
 ).lower() == "true"
 SECURE_HSTS_PRELOAD = os.getenv("DJANGO_SECURE_HSTS_PRELOAD", "False").lower() == "true"
+
+# ======================
+# EMAIL
+# ======================
 
 EMAIL_BACKEND = os.getenv(
     "DJANGO_EMAIL_BACKEND",
@@ -181,13 +231,23 @@ DEFAULT_FROM_EMAIL = os.getenv(
     "DJANGO_DEFAULT_FROM_EMAIL",
     "SwiftHire <nellorchamp@gmail.com>",
 )
+
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+# ======================
+# CLOUDINARY
+# ======================
 
 CLOUDINARY_STORAGE = {
     "CLOUD_NAME": os.getenv("CLOUDINARY_CLOUD_NAME"),
     "API_KEY": os.getenv("CLOUDINARY_API_KEY"),
     "API_SECRET": os.getenv("CLOUDINARY_API_SECRET"),
 }
+
+# ======================
+# SENTRY
+# ======================
+
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 
 if SENTRY_DSN:
@@ -197,5 +257,3 @@ if SENTRY_DSN:
         traces_sample_rate=0.1,
         environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
     )
-
-DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"

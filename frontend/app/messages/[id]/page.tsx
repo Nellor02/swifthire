@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { authFetch, getFileUrl } from "../../../lib/api";
+import { authFetch, getApiBaseUrl, getFileUrl } from "../../../lib/api";
 import { getStoredUser } from "../../../lib/auth";
 import StatusCard from "../../../components/StatusCard";
 
@@ -20,7 +20,7 @@ type CandidateProfile = {
 
 type Message = {
   id: number;
-  sender: number;
+  sender?: number;
   sender_username: string;
   sender_role?: string;
   sender_profile_picture?: string | null;
@@ -28,7 +28,7 @@ type Message = {
   sender_avatar?: string | null;
   body: string;
   created_at: string;
-  is_read: boolean;
+  is_read?: boolean;
 };
 
 type ConversationDetail = {
@@ -53,6 +53,25 @@ async function parseResponseSafely(res: Response) {
 
   const text = await res.text();
   return { error: text || `Request failed with status ${res.status}` };
+}
+
+function getAccessToken() {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("access_token") || "";
+}
+
+function getWebSocketBaseUrl() {
+  const apiBaseUrl = getApiBaseUrl();
+
+  if (apiBaseUrl.startsWith("https://")) {
+    return apiBaseUrl.replace("https://", "wss://");
+  }
+
+  if (apiBaseUrl.startsWith("http://")) {
+    return apiBaseUrl.replace("http://", "ws://");
+  }
+
+  return "ws://127.0.0.1:8000";
 }
 
 function formatDate(dateString?: string) {
@@ -84,14 +103,14 @@ export default function MessageThreadPage() {
   const conversationId = Array.isArray(rawId) ? rawId[0] : rawId;
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
-  const previousMessageCountRef = useRef(0);
+  const socketRef = useRef<WebSocket | null>(null);
 
   const [userChecked, setUserChecked] = useState(false);
   const [user, setUser] = useState<StoredUser | null>(null);
 
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [socketConnected, setSocketConnected] = useState(false);
   const [error, setError] = useState("");
 
   const [messageInput, setMessageInput] = useState("");
@@ -103,14 +122,11 @@ export default function MessageThreadPage() {
     setUserChecked(true);
   }, []);
 
-  async function loadConversation(options?: { silent?: boolean }) {
+  async function loadConversation() {
     if (!conversationId) return;
 
-    if (options?.silent) {
-      setRefreshing(true);
-    } else {
-      setInitialLoading(true);
-    }
+    setLoading(true);
+    setError("");
 
     try {
       const res = await authFetch(`/api/profiles/messages/${conversationId}/`);
@@ -121,51 +137,101 @@ export default function MessageThreadPage() {
       }
 
       setConversation(data);
-      setError("");
     } catch (err) {
       console.error(err);
-      if (!options?.silent) {
-        setError(
-          err instanceof Error ? err.message : "Could not load conversation."
-        );
-      }
+      setError(err instanceof Error ? err.message : "Could not load conversation.");
     } finally {
-      setInitialLoading(false);
-      setRefreshing(false);
+      setLoading(false);
     }
   }
 
   useEffect(() => {
     if (!userChecked || !user || !conversationId) return;
-
     loadConversation();
-
-    const intervalId = window.setInterval(() => {
-      loadConversation({ silent: true });
-    }, 5000);
-
-    return () => window.clearInterval(intervalId);
   }, [userChecked, user, conversationId]);
 
   useEffect(() => {
-    const currentCount = conversation?.messages.length || 0;
+    if (!userChecked || !user || !conversationId) return;
 
-    if (currentCount !== previousMessageCountRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-      previousMessageCountRef.current = currentCount;
+    const token = getAccessToken();
+
+    if (!token) {
+      setSocketConnected(false);
+      return;
     }
+
+    const wsBaseUrl = getWebSocketBaseUrl();
+    const socketUrl = `${wsBaseUrl}/ws/messages/${conversationId}/?token=${encodeURIComponent(
+      token
+    )}`;
+
+    const socket = new WebSocket(socketUrl);
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      setSocketConnected(true);
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const incoming = JSON.parse(event.data) as Message;
+
+        setConversation((prev) => {
+          if (!prev) return prev;
+
+          const alreadyExists = prev.messages.some(
+            (message) => String(message.id) === String(incoming.id)
+          );
+
+          if (alreadyExists) return prev;
+
+          return {
+            ...prev,
+            messages: [...prev.messages, incoming],
+          };
+        });
+      } catch (err) {
+        console.error("Invalid WebSocket message:", err);
+      }
+    };
+
+    socket.onerror = (event) => {
+      console.error("WebSocket error:", event);
+      setSocketConnected(false);
+    };
+
+    socket.onclose = () => {
+      setSocketConnected(false);
+    };
+
+    return () => {
+      socket.close();
+      socketRef.current = null;
+      setSocketConnected(false);
+    };
+  }, [userChecked, user, conversationId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation?.messages.length]);
 
   async function handleSendMessage() {
-    if (!messageInput.trim() || sending) return;
+    const body = messageInput.trim();
+    if (!body || sending) return;
 
     setSending(true);
     setError("");
 
     try {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ message: body }));
+        setMessageInput("");
+        return;
+      }
+
       const res = await authFetch(`/api/profiles/messages/${conversationId}/send/`, {
         method: "POST",
-        body: JSON.stringify({ body: messageInput.trim() }),
+        body: JSON.stringify({ body }),
       });
 
       const data = await parseResponseSafely(res);
@@ -175,7 +241,7 @@ export default function MessageThreadPage() {
       }
 
       setMessageInput("");
-      await loadConversation({ silent: true });
+      await loadConversation();
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to send message.");
@@ -255,7 +321,9 @@ export default function MessageThreadPage() {
                 {otherUser ? `Chat with ${otherUser}` : "Conversation"}
               </h1>
               <p className="mt-1 text-slate-300">
-                {refreshing ? "Checking for new messages..." : "Send and receive messages."}
+                {socketConnected
+                  ? "Real-time chat connected."
+                  : "Real-time chat reconnecting or unavailable."}
               </p>
             </div>
           </div>
@@ -268,7 +336,7 @@ export default function MessageThreadPage() {
           </Link>
         </div>
 
-        {initialLoading ? (
+        {loading ? (
           <StatusCard
             title="Loading Conversation"
             message="Please wait while messages load."
