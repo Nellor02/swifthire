@@ -68,6 +68,7 @@ class ShortlistedCandidateSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     sender_username = serializers.CharField(source="sender.username", read_only=True)
+    sender_role = serializers.CharField(source="sender.role", read_only=True)
 
     class Meta:
         model = Message
@@ -76,6 +77,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "conversation",
             "sender",
             "sender_username",
+            "sender_role",
             "body",
             "created_at",
             "is_read",
@@ -85,6 +87,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "conversation",
             "sender",
             "sender_username",
+            "sender_role",
             "created_at",
             "is_read",
         ]
@@ -96,6 +99,8 @@ class ConversationListSerializer(serializers.ModelSerializer):
     candidate_profile = SeekerProfileSerializer(read_only=True)
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
+    other_user_username = serializers.SerializerMethodField()
+    other_user_role = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
@@ -106,6 +111,8 @@ class ConversationListSerializer(serializers.ModelSerializer):
             "seeker",
             "seeker_username",
             "candidate_profile",
+            "other_user_username",
+            "other_user_role",
             "last_message",
             "unread_count",
             "created_at",
@@ -117,6 +124,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
         last_message = obj.messages.order_by("-created_at").first()
         if not last_message:
             return None
+
         return {
             "id": last_message.id,
             "body": last_message.body,
@@ -130,6 +138,26 @@ class ConversationListSerializer(serializers.ModelSerializer):
             return 0
 
         return obj.messages.filter(is_read=False).exclude(sender=request.user).count()
+
+    def get_other_user_username(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return ""
+
+        if request.user.id == obj.employer_id:
+            return obj.seeker.username
+
+        return obj.employer.username
+
+    def get_other_user_role(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return ""
+
+        if request.user.id == obj.employer_id:
+            return getattr(obj.seeker, "role", "seeker")
+
+        return getattr(obj.employer, "role", "employer")
 
 
 class ConversationDetailSerializer(serializers.ModelSerializer):
@@ -155,6 +183,8 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
 
 
 class NotificationSerializer(serializers.ModelSerializer):
+    action_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Notification
         fields = [
@@ -165,6 +195,8 @@ class NotificationSerializer(serializers.ModelSerializer):
             "message",
             "is_read",
             "target_id",
+            "target_url",
+            "action_url",
             "created_at",
         ]
         read_only_fields = [
@@ -174,5 +206,22 @@ class NotificationSerializer(serializers.ModelSerializer):
             "title",
             "message",
             "target_id",
+            "target_url",
+            "action_url",
             "created_at",
         ]
+
+    def get_action_url(self, obj):
+        if obj.target_url:
+            return obj.target_url
+
+        if obj.type == "message" and obj.target_id:
+            return f"/messages/{obj.target_id}"
+
+        if obj.type == "shortlist":
+            return "/profile/preview"
+
+        if obj.type == "status_update":
+            return "/my-applications"
+
+        return "/notifications"

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getStoredUser } from "../../lib/auth";
 import { authFetch } from "../../lib/api";
 import StatusCard from "../../components/StatusCard";
@@ -14,12 +15,24 @@ type NotificationItem = {
   message: string;
   is_read: boolean;
   target_id: number | null;
+  target_url?: string;
+  action_url?: string;
   created_at: string;
 };
 
 type NotificationResponse = {
   results: NotificationItem[];
   unread_count: number;
+};
+
+type MarkReadResponse = {
+  notification: NotificationItem;
+  unread_count: number;
+};
+
+type StoredUser = {
+  username: string;
+  role: string;
 };
 
 async function parseResponseSafely(res: Response) {
@@ -34,6 +47,9 @@ async function parseResponseSafely(res: Response) {
 }
 
 function getNotificationHref(notification: NotificationItem, userRole: string) {
+  if (notification.action_url) return notification.action_url;
+  if (notification.target_url) return notification.target_url;
+
   switch (notification.type) {
     case "message":
       return notification.target_id ? `/messages/${notification.target_id}` : "/messages";
@@ -50,19 +66,16 @@ function getNotificationHref(notification: NotificationItem, userRole: string) {
         : "/employer/jobs";
 
     case "status_update":
-      if (userRole === "employer") {
-        return "/employer/application-status";
-      }
-      return "/my-applications";
+      return userRole === "employer"
+        ? "/employer/application-status"
+        : "/my-applications";
 
     case "shortlist":
+    case "contact":
       return "/profile/preview";
 
     default:
-      if (userRole === "admin") {
-        return "/admin/employer-applications";
-      }
-      return userRole === "employer" ? "/employer/jobs" : "/";
+      return "/notifications";
   }
 }
 
@@ -76,24 +89,32 @@ function getTypeClasses(type: string) {
       return "bg-green-900 text-green-200 border border-green-700";
     case "shortlist":
       return "bg-yellow-900 text-yellow-200 border border-yellow-700";
+    case "contact":
+      return "bg-purple-900 text-purple-200 border border-purple-700";
     default:
       return "bg-slate-700 text-slate-200 border border-slate-600";
   }
 }
 
 export default function NotificationsPage() {
+  const router = useRouter();
+
   const [userChecked, setUserChecked] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState("");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
+  const [markAllLoading, setMarkAllLoading] = useState(false);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    const user = getStoredUser();
+    const user = getStoredUser() as StoredUser | null;
 
     if (!user) {
       setUserChecked(true);
@@ -114,9 +135,9 @@ export default function NotificationsPage() {
           throw new Error(data?.error || "Could not load notifications.");
         }
 
-        return data;
+        return data as NotificationResponse;
       })
-      .then((data: NotificationResponse) => {
+      .then((data) => {
         setNotifications(Array.isArray(data.results) ? data.results : []);
         setUnreadCount(data.unread_count || 0);
         setLoading(false);
@@ -128,51 +149,85 @@ export default function NotificationsPage() {
       });
   }, []);
 
+  async function markOneRead(notificationId: number) {
+    const current = notifications.find((item) => item.id === notificationId);
+
+    if (!current || current.is_read) {
+      return;
+    }
+
+    const res = await authFetch(`/api/profiles/notifications/${notificationId}/read/`, {
+      method: "PATCH",
+    });
+
+    const data = await parseResponseSafely(res);
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to mark notification as read.");
+    }
+
+    const typed = data as MarkReadResponse;
+
+    setNotifications((prev) =>
+      prev.map((item) =>
+        item.id === notificationId
+          ? {
+              ...item,
+              ...(typed.notification || {}),
+              is_read: true,
+            }
+          : item
+      )
+    );
+
+    setUnreadCount(
+      typeof typed.unread_count === "number"
+        ? typed.unread_count
+        : Math.max(0, unreadCount - 1)
+    );
+  }
+
   async function handleMarkOneRead(notificationId: number) {
     setError("");
     setSuccess("");
-    setActionLoading(true);
+    setActionLoadingId(notificationId);
 
     try {
-      const res = await authFetch(
-        `/api/profiles/notifications/${notificationId}/read/`,
-        {
-          method: "PATCH",
-        }
-      );
-
-      const data = await parseResponseSafely(res);
-
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to mark notification as read.");
-      }
-
-      setNotifications((prev) =>
-        prev.map((item) =>
-          item.id === notificationId ? { ...item, is_read: true } : item
-        )
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
+      await markOneRead(notificationId);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to mark as read.");
     } finally {
-      setActionLoading(false);
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleOpenNotification(notification: NotificationItem) {
+    const href = getNotificationHref(notification, userRole);
+
+    setError("");
+    setSuccess("");
+    setActionLoadingId(notification.id);
+
+    try {
+      await markOneRead(notification.id);
+      router.push(href);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to open notification.");
+      setActionLoadingId(null);
     }
   }
 
   async function handleMarkAllRead() {
     setError("");
     setSuccess("");
-    setActionLoading(true);
+    setMarkAllLoading(true);
 
     try {
-      const res = await authFetch(
-        "/api/profiles/notifications/read-all/",
-        {
-          method: "POST",
-        }
-      );
+      const res = await authFetch("/api/profiles/notifications/read-all/", {
+        method: "POST",
+      });
 
       const data = await parseResponseSafely(res);
 
@@ -187,13 +242,11 @@ export default function NotificationsPage() {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to mark all as read.");
     } finally {
-      setActionLoading(false);
+      setMarkAllLoading(false);
     }
   }
 
-  if (!userChecked) {
-    return null;
-  }
+  if (!userChecked) return null;
 
   if (!isLoggedIn) {
     return (
@@ -225,17 +278,18 @@ export default function NotificationsPage() {
           <div>
             <h1 className="text-3xl font-bold text-slate-100">Notifications</h1>
             <p className="mt-1 text-slate-300">
-              You have {unreadCount} unread notification{unreadCount !== 1 ? "s" : ""}.
+              You have {unreadCount} unread notification
+              {unreadCount !== 1 ? "s" : ""}.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
             <button
               onClick={handleMarkAllRead}
-              disabled={actionLoading || unreadCount === 0}
+              disabled={markAllLoading || unreadCount === 0}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              Mark All Read
+              {markAllLoading ? "Marking..." : "Mark All Read"}
             </button>
 
             <Link
@@ -253,14 +307,18 @@ export default function NotificationsPage() {
           </div>
         )}
 
+        {error && (
+          <div className="mb-6">
+            <StatusCard title="Error" message={error} variant="error" />
+          </div>
+        )}
+
         {loading ? (
           <StatusCard
             title="Loading Notifications"
             message="Please wait while your notifications are being loaded."
             variant="info"
           />
-        ) : error ? (
-          <StatusCard title="Error" message={error} variant="error" />
         ) : notifications.length === 0 ? (
           <StatusCard
             title="No Notifications Yet"
@@ -271,67 +329,80 @@ export default function NotificationsPage() {
           />
         ) : (
           <div className="space-y-4">
-            {notifications.map((notification) => (
-              <div
-                key={notification.id}
-                className={`rounded-xl border p-6 shadow-sm ${
-                  notification.is_read
-                    ? "border-slate-700 bg-slate-800"
-                    : "border-blue-700 bg-slate-800"
-                }`}
-              >
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="mb-3 flex flex-wrap items-center gap-3">
-                      <span
-                        className={`rounded px-3 py-1 text-xs font-semibold uppercase tracking-wide ${getTypeClasses(
-                          notification.type
-                        )}`}
-                      >
-                        {notification.type.replace("_", " ")}
-                      </span>
+            {notifications.map((notification) => {
+              const href = getNotificationHref(notification, userRole);
+              const isBusy = actionLoadingId === notification.id;
 
-                      {!notification.is_read && (
-                        <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white">
-                          Unread
+              return (
+                <div
+                  key={notification.id}
+                  className={`rounded-xl border p-6 shadow-sm ${
+                    notification.is_read
+                      ? "border-slate-700 bg-slate-800"
+                      : "border-blue-700 bg-slate-800"
+                  }`}
+                >
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="mb-3 flex flex-wrap items-center gap-3">
+                        <span
+                          className={`rounded px-3 py-1 text-xs font-semibold uppercase tracking-wide ${getTypeClasses(
+                            notification.type
+                          )}`}
+                        >
+                          {notification.type.replace("_", " ")}
                         </span>
-                      )}
+
+                        {!notification.is_read && (
+                          <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white">
+                            Unread
+                          </span>
+                        )}
+                      </div>
+
+                      <h2 className="text-xl font-semibold text-slate-100">
+                        {notification.title}
+                      </h2>
+
+                      <p className="mt-2 text-slate-300">
+                        {notification.message || "No message."}
+                      </p>
+
+                      <p className="mt-3 text-sm text-slate-400">
+                        {new Date(notification.created_at).toLocaleString()}
+                      </p>
                     </div>
 
-                    <h2 className="text-xl font-semibold text-slate-100">
-                      {notification.title}
-                    </h2>
-
-                    <p className="mt-2 text-slate-300">
-                      {notification.message || "No message."}
-                    </p>
-
-                    <p className="mt-3 text-sm text-slate-400">
-                      {new Date(notification.created_at).toLocaleString()}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-3">
-                    <Link
-                      href={getNotificationHref(notification, userRole)}
-                      className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-                    >
-                      Open
-                    </Link>
-
-                    {!notification.is_read && (
+                    <div className="flex flex-wrap gap-3">
                       <button
-                        onClick={() => handleMarkOneRead(notification.id)}
-                        disabled={actionLoading}
-                        className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600 disabled:opacity-50"
+                        onClick={() => handleOpenNotification(notification)}
+                        disabled={isBusy}
+                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                       >
-                        Mark Read
+                        {isBusy ? "Opening..." : "Open"}
                       </button>
-                    )}
+
+                      <Link
+                        href={href}
+                        className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+                      >
+                        View Link
+                      </Link>
+
+                      {!notification.is_read && (
+                        <button
+                          onClick={() => handleMarkOneRead(notification.id)}
+                          disabled={isBusy}
+                          className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600 disabled:opacity-50"
+                        >
+                          {isBusy ? "Marking..." : "Mark Read"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

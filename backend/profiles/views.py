@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.mail import send_mail
 from django.core.paginator import Paginator
 from django.db.models import Q
@@ -22,6 +23,49 @@ from .serializers import (
     MessageSerializer,
     NotificationSerializer,
 )
+
+
+def send_notification_email(user, title, message, action_url=""):
+    recipient_email = getattr(user, "email", "").strip()
+
+    if not recipient_email:
+        return
+
+    site_url = getattr(settings, "FRONTEND_URL", "").rstrip("/")
+    full_action_url = f"{site_url}{action_url}" if site_url and action_url.startswith("/") else action_url
+
+    email_body = message
+
+    if full_action_url:
+        email_body += f"\n\nOpen this notification:\n{full_action_url}"
+
+    send_mail(
+        subject=title,
+        message=email_body,
+        from_email=None,
+        recipient_list=[recipient_email],
+        fail_silently=False,
+    )
+
+
+def create_notification(user, notification_type, title, message="", target_id=None, target_url=""):
+    notification = Notification.objects.create(
+        user=user,
+        type=notification_type,
+        title=title,
+        message=message,
+        target_id=target_id,
+        target_url=target_url or "",
+    )
+
+    send_notification_email(
+        user=user,
+        title=title,
+        message=message or title,
+        action_url=target_url or "",
+    )
+
+    return notification
 
 
 class MySeekerProfileAPIView(APIView):
@@ -99,7 +143,7 @@ class TalentSearchAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        queryset = SeekerProfile.objects.filter(is_public=True).order_by("-updated_at")
+        queryset = SeekerProfile.objects.filter(is_public=True).select_related("user").order_by("-updated_at")
 
         search = request.query_params.get("search", "").strip()
         location = request.query_params.get("location", "").strip()
@@ -157,7 +201,7 @@ class TalentProfileDetailAPIView(APIView):
             )
 
         try:
-            profile = SeekerProfile.objects.get(pk=pk, is_public=True)
+            profile = SeekerProfile.objects.select_related("user").get(pk=pk, is_public=True)
         except SeekerProfile.DoesNotExist:
             return Response(
                 {"error": "Talent profile not found."},
@@ -179,7 +223,7 @@ class ContactTalentAPIView(APIView):
             )
 
         try:
-            profile = SeekerProfile.objects.get(pk=pk, is_public=True)
+            profile = SeekerProfile.objects.select_related("user").get(pk=pk, is_public=True)
         except SeekerProfile.DoesNotExist:
             return Response(
                 {"error": "Talent profile not found."},
@@ -209,9 +253,11 @@ class ContactTalentAPIView(APIView):
             )
 
         sender_name = getattr(request.user, "username", "Employer")
+        sender_email = getattr(request.user, "email", "")
 
         full_message = (
-            f"Message from employer/admin: {sender_name}\n\n"
+            f"Message from SwiftHire employer/admin: {sender_name}\n"
+            f"Sender email: {sender_email or 'Not provided'}\n\n"
             f"Candidate: {profile.full_name}\n\n"
             f"{message}"
         )
@@ -222,6 +268,15 @@ class ContactTalentAPIView(APIView):
             from_email=None,
             recipient_list=[recipient_email],
             fail_silently=False,
+        )
+
+        create_notification(
+            user=profile.user,
+            notification_type="contact",
+            title="An employer contacted you",
+            message=f"{sender_name} sent you an email through SwiftHire.",
+            target_id=profile.id,
+            target_url="/profile/preview",
         )
 
         return Response({"message": "Message sent successfully."}, status=status.HTTP_200_OK)
@@ -238,7 +293,7 @@ class ShortlistCandidateAPIView(APIView):
             )
 
         try:
-            profile = SeekerProfile.objects.get(pk=pk, is_public=True)
+            profile = SeekerProfile.objects.select_related("user").get(pk=pk, is_public=True)
         except SeekerProfile.DoesNotExist:
             return Response(
                 {"error": "Talent profile not found."},
@@ -256,12 +311,13 @@ class ShortlistCandidateAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        Notification.objects.create(
+        create_notification(
             user=profile.user,
-            type="shortlist",
+            notification_type="shortlist",
             title="You were shortlisted",
             message=f"{request.user.username} shortlisted your profile.",
             target_id=profile.id,
+            target_url="/profile/preview",
         )
 
         serializer = ShortlistedCandidateSerializer(shortlist)
@@ -324,14 +380,27 @@ class ConversationListAPIView(APIView):
         if user_role == "employer":
             conversations = Conversation.objects.filter(
                 employer=request.user
-            ).select_related("employer", "seeker", "candidate_profile", "candidate_profile__user").prefetch_related("messages")
+            ).select_related(
+                "employer",
+                "seeker",
+                "candidate_profile",
+                "candidate_profile__user",
+            ).prefetch_related("messages")
         elif user_role == "seeker":
             conversations = Conversation.objects.filter(
                 seeker=request.user
-            ).select_related("employer", "seeker", "candidate_profile", "candidate_profile__user").prefetch_related("messages")
+            ).select_related(
+                "employer",
+                "seeker",
+                "candidate_profile",
+                "candidate_profile__user",
+            ).prefetch_related("messages")
         elif user_role == "admin":
             conversations = Conversation.objects.all().select_related(
-                "employer", "seeker", "candidate_profile", "candidate_profile__user"
+                "employer",
+                "seeker",
+                "candidate_profile",
+                "candidate_profile__user",
             ).prefetch_related("messages")
         else:
             return Response(
@@ -353,7 +422,10 @@ class ConversationDetailAPIView(APIView):
     def get(self, request, pk):
         try:
             conversation = Conversation.objects.select_related(
-                "employer", "seeker", "candidate_profile", "candidate_profile__user"
+                "employer",
+                "seeker",
+                "candidate_profile",
+                "candidate_profile__user",
             ).prefetch_related("messages__sender").get(pk=pk)
         except Conversation.DoesNotExist:
             return Response(
@@ -406,7 +478,16 @@ class StartConversationAPIView(APIView):
 
         if not created and conversation.candidate_profile_id != profile.id:
             conversation.candidate_profile = profile
-            conversation.save()
+            conversation.save(update_fields=["candidate_profile", "updated_at"])
+
+        create_notification(
+            user=profile.user,
+            notification_type="message",
+            title="New conversation started",
+            message=f"{request.user.username} started a conversation with you.",
+            target_id=conversation.id,
+            target_url=f"/messages/{conversation.id}",
+        )
 
         serializer = ConversationDetailSerializer(conversation)
         return Response(
@@ -421,7 +502,9 @@ class SendMessageAPIView(APIView):
     def post(self, request, pk):
         try:
             conversation = Conversation.objects.select_related(
-                "employer", "seeker", "candidate_profile"
+                "employer",
+                "seeker",
+                "candidate_profile",
             ).get(pk=pk)
         except Conversation.DoesNotExist:
             return Response(
@@ -455,14 +538,19 @@ class SendMessageAPIView(APIView):
             body=body,
         )
 
-        receiver = conversation.seeker if request.user.id == conversation.employer_id else conversation.employer
+        receiver = (
+            conversation.seeker
+            if request.user.id == conversation.employer_id
+            else conversation.employer
+        )
 
-        Notification.objects.create(
+        create_notification(
             user=receiver,
-            type="message",
+            notification_type="message",
             title="New message",
             message=f"{request.user.username} sent you a message.",
             target_id=conversation.id,
+            target_url=f"/messages/{conversation.id}",
         )
 
         conversation.save(update_fields=["updated_at"])
@@ -499,11 +587,19 @@ class MarkNotificationReadAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        notification.is_read = True
-        notification.save(update_fields=["is_read"])
+        if not notification.is_read:
+            notification.is_read = True
+            notification.save(update_fields=["is_read"])
 
         serializer = NotificationSerializer(notification)
-        return Response(serializer.data)
+        unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
+
+        return Response(
+            {
+                "notification": serializer.data,
+                "unread_count": unread_count,
+            }
+        )
 
 
 class MarkAllNotificationsReadAPIView(APIView):
@@ -511,4 +607,10 @@ class MarkAllNotificationsReadAPIView(APIView):
 
     def post(self, request):
         Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
-        return Response({"message": "All notifications marked as read."}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "message": "All notifications marked as read.",
+                "unread_count": 0,
+            },
+            status=status.HTTP_200_OK,
+        )

@@ -12,15 +12,20 @@ type StoredUser = {
   role: string;
 };
 
-type RawMessage = Record<string, unknown>;
+type Message = {
+  id: number;
+  sender: number;
+  sender_username: string;
+  body: string;
+  created_at: string;
+  is_read: boolean;
+};
 
-type MessageItem = {
-  id: number | string;
-  senderUsername: string;
-  senderRole: string;
-  content: string;
-  createdAt: string;
-  isMine: boolean;
+type ConversationDetail = {
+  id: number;
+  employer_username: string;
+  seeker_username: string;
+  messages: Message[];
 };
 
 async function parseResponseSafely(res: Response) {
@@ -34,26 +39,7 @@ async function parseResponseSafely(res: Response) {
   return { error: text || `Request failed with status ${res.status}` };
 }
 
-function asString(value: unknown, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
-
-function normalizeMessages(data: unknown): RawMessage[] {
-  if (Array.isArray(data)) return data as RawMessage[];
-
-  if (data && typeof data === "object") {
-    const obj = data as Record<string, unknown>;
-
-    if (Array.isArray(obj.results)) return obj.results as RawMessage[];
-    if (Array.isArray(obj.messages)) return obj.messages as RawMessage[];
-    if (Array.isArray(obj.thread)) return obj.thread as RawMessage[];
-    if (Array.isArray(obj.conversation)) return obj.conversation as RawMessage[];
-  }
-
-  return [];
-}
-
-function formatDate(dateString: string) {
+function formatDate(dateString?: string) {
   if (!dateString) return "Unknown time";
 
   const date = new Date(dateString);
@@ -62,108 +48,99 @@ function formatDate(dateString: string) {
   return date.toLocaleString();
 }
 
-function mapRawMessage(item: RawMessage, currentUsername: string): MessageItem {
-  const rawId = item.id ?? item.message_id ?? item.pk;
-  const id: number | string =
-    typeof rawId === "number" || typeof rawId === "string"
-      ? rawId
-      : Math.random().toString(36).slice(2);
-
-  const senderUsername =
-    asString(item.sender_username) ||
-    asString(item.sender) ||
-    asString(item.from_username) ||
-    asString(item.username) ||
-    "Unknown user";
-
-  const senderRole =
-    asString(item.sender_role) ||
-    asString(item.role) ||
-    asString(item.user_role);
-
-  const content =
-    asString(item.content) ||
-    asString(item.message) ||
-    asString(item.body) ||
-    asString(item.text) ||
-    "";
-
-  const createdAt =
-    asString(item.created_at) ||
-    asString(item.sent_at) ||
-    asString(item.timestamp);
-
-  return {
-    id,
-    senderUsername,
-    senderRole,
-    content,
-    createdAt,
-    isMine: senderUsername === currentUsername,
-  };
-}
-
 export default function MessageThreadPage() {
   const params = useParams<{ id: string | string[] }>();
   const rawId = params?.id;
-  const threadId = Array.isArray(rawId) ? rawId[0] : rawId;
+  const conversationId = Array.isArray(rawId) ? rawId[0] : rawId;
 
   const [userChecked, setUserChecked] = useState(false);
   const [user, setUser] = useState<StoredUser | null>(null);
-  const [messages, setMessages] = useState<MessageItem[]>([]);
+
+  const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [messageInput, setMessageInput] = useState("");
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     const storedUser = getStoredUser();
     setUser(storedUser);
     setUserChecked(true);
+  }, []);
 
-    if (!storedUser || !threadId) {
+  async function loadConversation() {
+    if (!conversationId) return;
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await authFetch(`/api/profiles/messages/${conversationId}/`);
+      const data = await parseResponseSafely(res);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Could not load conversation.");
+      }
+
+      setConversation(data);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Could not load conversation.");
+    } finally {
       setLoading(false);
-      return;
+    }
+  }
+
+  useEffect(() => {
+    if (!userChecked || !user || !conversationId) return;
+    loadConversation();
+  }, [userChecked, user, conversationId]);
+
+  async function handleSendMessage() {
+    if (!messageInput.trim()) return;
+
+    setSending(true);
+
+    try {
+      const res = await authFetch(
+        `/api/profiles/messages/${conversationId}/send/`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ body: messageInput }),
+        }
+      );
+
+      const data = await parseResponseSafely(res);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to send message.");
+      }
+
+      setMessageInput("");
+      await loadConversation(); // refresh chat
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to send message.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const otherUser = useMemo(() => {
+    if (!conversation || !user) return "";
+
+    if (user.role === "employer" || user.role === "admin") {
+      return conversation.seeker_username;
     }
 
-    authFetch(`http://127.0.0.1:8000/api/profiles/messages/${threadId}/`)
-      .then(async (res) => {
-        const data = await parseResponseSafely(res);
+    return conversation.employer_username;
+  }, [conversation, user]);
 
-        if (!res.ok) {
-          throw new Error(data?.error || "Could not load conversation.");
-        }
-
-        return data;
-      })
-      .then((data) => {
-        const mapped = normalizeMessages(data).map((item) =>
-          mapRawMessage(item, storedUser.username)
-        );
-
-        mapped.sort((a, b) => {
-          const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return aTime - bTime;
-        });
-
-        setMessages(mapped);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setError(err instanceof Error ? err.message : "Could not load conversation.");
-        setLoading(false);
-      });
-  }, [threadId]);
-
-  const otherParticipant = useMemo(() => {
-    if (!user) return "";
-    const other = messages.find((message) => !message.isMine);
-    return other?.senderUsername || "";
-  }, [messages, user]);
-
-  if (!userChecked) {
-    return null;
-  }
+  if (!userChecked) return null;
 
   if (!user) {
     return (
@@ -187,10 +164,10 @@ export default function MessageThreadPage() {
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-slate-100">
-              {otherParticipant ? `Chat with ${otherParticipant}` : "Conversation"}
+              {otherUser ? `Chat with ${otherUser}` : "Conversation"}
             </h1>
             <p className="mt-1 text-slate-300">
-              Review your conversation history.
+              Send and receive messages in real time.
             </p>
           </div>
 
@@ -205,7 +182,7 @@ export default function MessageThreadPage() {
         {loading ? (
           <StatusCard
             title="Loading Conversation"
-            message="Please wait while messages are loading."
+            message="Please wait while messages load."
             variant="info"
           />
         ) : error ? (
@@ -214,61 +191,74 @@ export default function MessageThreadPage() {
             message={error}
             variant="error"
             actionHref="/messages"
-            actionLabel="Back to Messages"
+            actionLabel="Back"
           />
-        ) : messages.length === 0 ? (
+        ) : !conversation ? (
           <StatusCard
-            title="No Messages Yet"
-            message="This conversation does not contain any messages yet."
+            title="Conversation Not Found"
+            message="This conversation does not exist."
             variant="neutral"
             actionHref="/messages"
-            actionLabel="Back to Messages"
+            actionLabel="Back"
           />
         ) : (
-          <div className="rounded-xl border border-slate-700 bg-slate-800 p-4 shadow-sm">
-            <div className="space-y-4">
-              {messages.map((message) => {
-                return (
-                  <div
-                    key={String(message.id)}
-                    className={`flex ${message.isMine ? "justify-end" : "justify-start"}`}
-                  >
+          <>
+            {/* MESSAGE LIST */}
+            <div className="mb-6 space-y-4 rounded-xl border border-slate-700 bg-slate-800 p-4">
+              {conversation.messages.length === 0 ? (
+                <p className="text-slate-400">No messages yet.</p>
+              ) : (
+                conversation.messages.map((msg) => {
+                  const isMine = msg.sender_username === user.username;
+
+                  return (
                     <div
-                      className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-sm ${
-                        message.isMine
-                          ? "bg-blue-600 text-white"
-                          : "bg-slate-700 text-slate-100"
+                      key={msg.id}
+                      className={`flex ${
+                        isMine ? "justify-end" : "justify-start"
                       }`}
                     >
-                      <div className="mb-1 flex flex-wrap items-center gap-2 text-xs opacity-90">
-                        <span className="font-semibold">
-                          {message.isMine ? "You" : message.senderUsername}
-                        </span>
-
-                        {message.senderRole && !message.isMine && (
-                          <span className="rounded-full border border-white/20 px-2 py-0.5">
-                            {message.senderRole}
-                          </span>
-                        )}
-                      </div>
-
-                      <p className="whitespace-pre-line text-sm leading-relaxed">
-                        {message.content || "No content."}
-                      </p>
-
-                      <p
-                        className={`mt-2 text-right text-xs ${
-                          message.isMine ? "text-blue-100" : "text-slate-300"
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                          isMine
+                            ? "bg-blue-600 text-white"
+                            : "bg-slate-700 text-slate-100"
                         }`}
                       >
-                        {formatDate(message.createdAt)}
-                      </p>
+                        <div className="text-xs mb-1 opacity-80">
+                          {isMine ? "You" : msg.sender_username}
+                        </div>
+
+                        <p className="whitespace-pre-line">{msg.body}</p>
+
+                        <p className="text-xs mt-2 opacity-70 text-right">
+                          {formatDate(msg.created_at)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
-          </div>
+
+            {/* SEND MESSAGE */}
+            <div className="flex gap-2">
+              <input
+                value={messageInput}
+                onChange={(e) => setMessageInput(e.target.value)}
+                placeholder="Type your message..."
+                className="flex-1 rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-slate-100 outline-none"
+              />
+
+              <button
+                onClick={handleSendMessage}
+                disabled={sending}
+                className="rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {sending ? "Sending..." : "Send"}
+              </button>
+            </div>
+          </>
         )}
       </div>
     </main>

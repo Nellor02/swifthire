@@ -15,6 +15,11 @@ type TalentProfile = {
   email: string;
 };
 
+type StoredUser = {
+  username: string;
+  role: string;
+};
+
 async function parseResponseSafely(res: Response) {
   const contentType = res.headers.get("content-type") || "";
 
@@ -27,12 +32,12 @@ async function parseResponseSafely(res: Response) {
 }
 
 export default function ContactTalentPage() {
-  const params = useParams<{ id: string }>();
-  const id = String(params.id);
+  const params = useParams<{ id: string | string[] }>();
+  const rawId = params?.id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
   const [userChecked, setUserChecked] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isEmployer, setIsEmployer] = useState(false);
+  const [user, setUser] = useState<StoredUser | null>(null);
 
   const [profile, setProfile] = useState<TalentProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -46,37 +51,25 @@ export default function ContactTalentPage() {
   const [notFoundState, setNotFoundState] = useState(false);
 
   useEffect(() => {
-    const user = getStoredUser();
-
-    if (!user) {
-      setUserChecked(true);
-      setIsLoggedIn(false);
-      setIsEmployer(false);
-      setLoadingProfile(false);
-      return;
-    }
-
+    const storedUser = getStoredUser();
+    setUser(storedUser);
     setUserChecked(true);
-    setIsLoggedIn(true);
 
-    if (!["employer", "admin"].includes(user.role)) {
-      setIsEmployer(false);
+    if (!storedUser || !["employer", "admin"].includes(storedUser.role)) {
       setLoadingProfile(false);
-      return;
     }
-
-    setIsEmployer(true);
   }, []);
 
   useEffect(() => {
-    if (!userChecked || !isLoggedIn || !isEmployer || !id) {
+    if (!userChecked || !user || !["employer", "admin"].includes(user.role) || !id) {
       return;
     }
 
     setLoadingProfile(true);
     setError("");
+    setNotFoundState(false);
 
-    authFetch(`http://127.0.0.1:8000/api/profiles/talent/${id}/`)
+    authFetch(`/api/profiles/talent/${id}/`)
       .then(async (res) => {
         const data = await parseResponseSafely(res);
 
@@ -102,7 +95,7 @@ export default function ContactTalentPage() {
         setError(err instanceof Error ? err.message : "Could not load talent profile.");
         setLoadingProfile(false);
       });
-  }, [userChecked, isLoggedIn, isEmployer, id]);
+  }, [userChecked, user, id]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -122,23 +115,18 @@ export default function ContactTalentPage() {
     setSending(true);
 
     try {
-      const res = await authFetch(`http://127.0.0.1:8000/api/profiles/talent/${id}/contact/`, {
+      const res = await authFetch(`/api/profiles/talent/${id}/contact/`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
-          subject,
-          message,
+          subject: subject.trim(),
+          message: message.trim(),
         }),
       });
 
       const data = await parseResponseSafely(res);
 
       if (!res.ok) {
-        setError(data?.error || `Failed to send message. (${res.status})`);
-        setSending(false);
-        return;
+        throw new Error(data?.error || `Failed to send message. (${res.status})`);
       }
 
       setSuccess(data?.message || "Message sent successfully.");
@@ -146,7 +134,7 @@ export default function ContactTalentPage() {
       setMessage("");
     } catch (err) {
       console.error(err);
-      setError("Something went wrong while sending the message.");
+      setError(err instanceof Error ? err.message : "Something went wrong while sending the message.");
     } finally {
       setSending(false);
     }
@@ -156,7 +144,7 @@ export default function ContactTalentPage() {
     return null;
   }
 
-  if (!isLoggedIn) {
+  if (!user) {
     return (
       <main className="min-h-screen bg-slate-900 p-6">
         <div className="mx-auto max-w-4xl">
@@ -172,7 +160,7 @@ export default function ContactTalentPage() {
     );
   }
 
-  if (!isEmployer) {
+  if (!["employer", "admin"].includes(user.role)) {
     return (
       <main className="min-h-screen bg-slate-900 p-6">
         <div className="mx-auto max-w-4xl">
@@ -258,30 +246,28 @@ export default function ContactTalentPage() {
             <h1 className="text-2xl font-bold text-slate-100">
               Contact {profile.full_name}
             </h1>
+
             <p className="mt-1 text-slate-300">
               {profile.headline || "No headline provided"}
             </p>
+
             <p className="mt-2 text-sm text-slate-400">
               {profile.location || "Location not specified"}
+            </p>
+
+            <p className="mt-2 text-xs text-slate-500">
+              Your message will be sent to the candidate’s registered email address.
             </p>
           </div>
         )}
 
         <div className="space-y-6">
           {error && profile && (
-            <StatusCard
-              title="Error"
-              message={error}
-              variant="error"
-            />
+            <StatusCard title="Error" message={error} variant="error" />
           )}
 
           {success && (
-            <StatusCard
-              title="Success"
-              message={success}
-              variant="success"
-            />
+            <StatusCard title="Success" message={success} variant="success" />
           )}
 
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-8 shadow-sm">
@@ -317,7 +303,7 @@ export default function ContactTalentPage() {
                 disabled={sending}
                 className="rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {sending ? "Sending..." : "Send Message"}
+                {sending ? "Sending..." : "Send Email"}
               </button>
             </form>
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { authFetch } from "../lib/api";
 
 type StoredUser = {
@@ -60,6 +60,22 @@ export default function AuthStatus() {
     "approved" | "pending" | "rejected" | "unknown"
   >("unknown");
 
+  const refreshNotificationCount = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      const res = await authFetch("/api/profiles/notifications/");
+      const data = await parseResponseSafely(res);
+
+      if (!res.ok) return;
+
+      const typed = data as NotificationsResponse;
+      setUnreadNotifications(typed.unread_count || 0);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [user]);
+
   useEffect(() => {
     const rawUser = localStorage.getItem("user");
 
@@ -79,25 +95,33 @@ export default function AuthStatus() {
   }, []);
 
   useEffect(() => {
-    if (!checked || !user) {
-      return;
-    }
+    if (!checked || !user) return;
 
-    authFetch("/api/profiles/notifications/")
-      .then(async (res) => {
-        const data = await parseResponseSafely(res);
+    refreshNotificationCount();
 
-        if (!res.ok) {
-          return;
-        }
+    const intervalId = window.setInterval(() => {
+      refreshNotificationCount();
+    }, 30000);
 
-        const typed = data as NotificationsResponse;
-        setUnreadNotifications(typed.unread_count || 0);
-      })
-      .catch((err) => {
-        console.error(err);
-      });
-  }, [checked, user]);
+    const handleFocus = () => {
+      refreshNotificationCount();
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        refreshNotificationCount();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [checked, user, refreshNotificationCount]);
 
   useEffect(() => {
     if (!checked || !user || user.role !== "employer") {

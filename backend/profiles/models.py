@@ -15,7 +15,6 @@ class SeekerProfile(models.Model):
         on_delete=models.CASCADE,
         related_name="seeker_profile",
     )
-    
     full_name = models.CharField(max_length=255)
     headline = models.CharField(max_length=255, blank=True)
     bio = models.TextField(blank=True)
@@ -34,9 +33,9 @@ class SeekerProfile(models.Model):
     linkedin_url = models.URLField(blank=True)
     portfolio_url = models.URLField(blank=True)
     profile_picture = models.ImageField(
-    upload_to="profiles/pictures/",
-    blank=True,
-    null=True,
+        upload_to="profiles/pictures/",
+        blank=True,
+        null=True,
     )
     is_public = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -114,12 +113,16 @@ class Message(models.Model):
 
     def __str__(self):
         return f"Message from {self.sender.username} in conversation {self.conversation_id}"
+
+
 class Notification(models.Model):
     TYPE_CHOICES = [
         ("message", "Message"),
         ("application", "Application"),
         ("status_update", "Status Update"),
         ("shortlist", "Shortlist"),
+        ("contact", "Contact"),
+        ("system", "System"),
     ]
 
     user = models.ForeignKey(
@@ -132,8 +135,8 @@ class Notification(models.Model):
     message = models.TextField(blank=True)
     is_read = models.BooleanField(default=False)
 
-    # optional link target (e.g. conversation id, job id)
     target_id = models.IntegerField(null=True, blank=True)
+    target_url = models.CharField(max_length=500, blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True)
 

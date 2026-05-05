@@ -11,16 +11,25 @@ type StoredUser = {
   role: string;
 };
 
-type RawConversation = Record<string, unknown>;
+type LastMessage = {
+  id?: number;
+  body?: string;
+  sender_username?: string;
+  created_at?: string;
+};
 
-type ConversationCard = {
-  id: number | string;
-  title: string;
-  subtitle: string;
-  preview: string;
-  unread: boolean;
-  updatedAt: string;
-  href: string;
+type Conversation = {
+  id: number;
+  employer: number;
+  employer_username: string;
+  seeker: number;
+  seeker_username: string;
+  other_user_username?: string;
+  other_user_role?: string;
+  last_message: LastMessage | null;
+  unread_count: number;
+  created_at: string;
+  updated_at: string;
 };
 
 async function parseResponseSafely(res: Response) {
@@ -34,19 +43,7 @@ async function parseResponseSafely(res: Response) {
   return { error: text || `Request failed with status ${res.status}` };
 }
 
-function asString(value: unknown, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
-
-function asNumber(value: unknown, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function asBoolean(value: unknown, fallback = false) {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function formatDate(dateString: string) {
+function formatDate(dateString?: string) {
   if (!dateString) return "Unknown date";
 
   const date = new Date(dateString);
@@ -55,94 +52,38 @@ function formatDate(dateString: string) {
   return date.toLocaleString();
 }
 
-function truncateText(text: string, maxLength = 140) {
+function truncateText(text?: string, maxLength = 140) {
   if (!text) return "No messages yet.";
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength)}...`;
 }
 
-function normalizeConversations(data: unknown): RawConversation[] {
-  if (Array.isArray(data)) return data as RawConversation[];
+function getConversationTitle(conversation: Conversation, user: StoredUser) {
+  if (conversation.other_user_username) return conversation.other_user_username;
 
-  if (data && typeof data === "object") {
-    const obj = data as Record<string, unknown>;
-
-    if (Array.isArray(obj.results)) return obj.results as RawConversation[];
-    if (Array.isArray(obj.conversations)) return obj.conversations as RawConversation[];
-    if (Array.isArray(obj.messages)) return obj.messages as RawConversation[];
-    if (Array.isArray(obj.threads)) return obj.threads as RawConversation[];
+  if (user.role === "employer" || user.role === "admin") {
+    return conversation.seeker_username || "Seeker";
   }
 
-  return [];
+  return conversation.employer_username || "Employer";
 }
 
-function mapConversationToCard(item: RawConversation): ConversationCard {
-  const rawId =
-    item.id ??
-    item.thread_id ??
-    item.conversation_id ??
-    item.message_thread_id;
+function getConversationSubtitle(conversation: Conversation, user: StoredUser) {
+  if (conversation.other_user_role) {
+    return `with ${conversation.other_user_role}`;
+  }
 
-  const id: number | string =
-    typeof rawId === "number" || typeof rawId === "string"
-      ? rawId
-      : Math.random().toString(36).slice(2);
+  if (user.role === "employer" || user.role === "admin") {
+    return "Candidate conversation";
+  }
 
-  const otherUser =
-    asString(item.other_user_username) ||
-    asString(item.other_username) ||
-    asString(item.recipient_username) ||
-    asString(item.sender_username) ||
-    asString(item.username);
-
-  const title =
-    asString(item.title) ||
-    otherUser ||
-    asString(item.subject) ||
-    "Conversation";
-
-  const subtitle =
-    asString(item.role_label) ||
-    asString(item.other_user_role) ||
-    asString(item.participant_label) ||
-    (otherUser ? `with ${otherUser}` : "Direct message");
-
-  const preview =
-    asString(item.last_message) ||
-    asString(item.preview) ||
-    asString(item.message) ||
-    asString(item.body) ||
-    asString(item.content) ||
-    "No messages yet.";
-
-  const unread =
-    asBoolean(item.is_unread) ||
-    asBoolean(item.unread) ||
-    asNumber(item.unread_count) > 0;
-
-  const updatedAt =
-    asString(item.updated_at) ||
-    asString(item.last_message_at) ||
-    asString(item.created_at);
-
-  const hrefId = encodeURIComponent(String(id));
-  const href = `/messages/${hrefId}`;
-
-  return {
-    id,
-    title,
-    subtitle,
-    preview: truncateText(preview),
-    unread,
-    updatedAt,
-    href,
-  };
+  return "Employer conversation";
 }
 
 export default function MessagesPage() {
   const [userChecked, setUserChecked] = useState(false);
   const [user, setUser] = useState<StoredUser | null>(null);
-  const [cards, setCards] = useState<ConversationCard[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -156,7 +97,7 @@ export default function MessagesPage() {
       return;
     }
 
-    authFetch("http://127.0.0.1:8000/api/profiles/messages/")
+    authFetch("/api/profiles/messages/")
       .then(async (res) => {
         const data = await parseResponseSafely(res);
 
@@ -167,15 +108,19 @@ export default function MessagesPage() {
         return data;
       })
       .then((data) => {
-        const rows = normalizeConversations(data).map(mapConversationToCard);
+        const rows = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.results)
+            ? data.results
+            : [];
 
-        rows.sort((a, b) => {
-          const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-          const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        const sortedRows = [...rows].sort((a, b) => {
+          const aTime = a?.updated_at ? new Date(a.updated_at).getTime() : 0;
+          const bTime = b?.updated_at ? new Date(b.updated_at).getTime() : 0;
           return bTime - aTime;
         });
 
-        setCards(rows);
+        setConversations(sortedRows);
         setLoading(false);
       })
       .catch((err) => {
@@ -186,8 +131,12 @@ export default function MessagesPage() {
   }, []);
 
   const unreadCount = useMemo(
-    () => cards.filter((card) => card.unread).length,
-    [cards]
+    () =>
+      conversations.reduce(
+        (total, conversation) => total + (conversation.unread_count || 0),
+        0
+      ),
+    [conversations]
   );
 
   if (!userChecked) {
@@ -221,7 +170,7 @@ export default function MessagesPage() {
             <h1 className="text-3xl font-bold text-slate-100">Messages</h1>
             <p className="mt-1 text-slate-300">
               {unreadCount > 0
-                ? `You have ${unreadCount} unread conversation${unreadCount !== 1 ? "s" : ""}.`
+                ? `You have ${unreadCount} unread message${unreadCount !== 1 ? "s" : ""}.`
                 : "Review your conversations with candidates and employers."}
             </p>
           </div>
@@ -242,59 +191,84 @@ export default function MessagesPage() {
           />
         ) : error ? (
           <StatusCard title="Error" message={error} variant="error" />
-        ) : cards.length === 0 ? (
+        ) : conversations.length === 0 ? (
           <StatusCard
             title="No Conversations Yet"
-            message="Your messages will appear here once you start communicating."
+            message={
+              user.role === "seeker"
+                ? "Your conversations with employers will appear here."
+                : "Start a conversation from a candidate profile or applicant page."
+            }
             variant="neutral"
-            actionHref={backHref}
-            actionLabel="Go Back"
+            actionHref={user.role === "seeker" ? "/" : "/talent"}
+            actionLabel={user.role === "seeker" ? "Browse Jobs" : "Search Talent"}
           />
         ) : (
           <div className="space-y-4">
-            {cards.map((card) => (
-              <div
-                key={String(card.id)}
-                className={`rounded-xl border p-6 shadow-sm ${
-                  card.unread
-                    ? "border-blue-700 bg-slate-800"
-                    : "border-slate-700 bg-slate-800"
-                }`}
-              >
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div className="flex-1">
-                    <div className="mb-3 flex flex-wrap items-center gap-3">
-                      <h2 className="text-xl font-semibold text-slate-100">
-                        {card.title}
-                      </h2>
+            {conversations.map((conversation) => {
+              const title = getConversationTitle(conversation, user);
+              const subtitle = getConversationSubtitle(conversation, user);
+              const preview = conversation.last_message?.body || "No messages yet.";
+              const sender = conversation.last_message?.sender_username;
+              const date =
+                conversation.last_message?.created_at || conversation.updated_at;
+              const isUnread = (conversation.unread_count || 0) > 0;
 
-                      {card.unread && (
-                        <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white">
-                          Unread
-                        </span>
-                      )}
+              return (
+                <div
+                  key={conversation.id}
+                  className={`rounded-xl border p-6 shadow-sm ${
+                    isUnread
+                      ? "border-blue-700 bg-slate-800"
+                      : "border-slate-700 bg-slate-800"
+                  }`}
+                >
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="flex-1">
+                      <div className="mb-3 flex flex-wrap items-center gap-3">
+                        <h2 className="text-xl font-semibold text-slate-100">
+                          {title}
+                        </h2>
+
+                        {isUnread && (
+                          <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white">
+                            {conversation.unread_count} unread
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-sm text-slate-400">{subtitle}</p>
+
+                      <p className="mt-3 text-slate-300">
+                        {sender ? (
+                          <>
+                            <span className="font-medium text-slate-200">
+                              {sender}:
+                            </span>{" "}
+                            {truncateText(preview)}
+                          </>
+                        ) : (
+                          truncateText(preview)
+                        )}
+                      </p>
+
+                      <p className="mt-3 text-sm text-slate-400">
+                        {formatDate(date)}
+                      </p>
                     </div>
 
-                    <p className="text-sm text-slate-400">{card.subtitle}</p>
-
-                    <p className="mt-3 text-slate-300">{card.preview}</p>
-
-                    <p className="mt-3 text-sm text-slate-400">
-                      {formatDate(card.updatedAt)}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-3">
-                    <Link
-                      href={card.href}
-                      className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-                    >
-                      Open Chat
-                    </Link>
+                    <div className="flex flex-wrap gap-3">
+                      <Link
+                        href={`/messages/${conversation.id}`}
+                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                      >
+                        Open Chat
+                      </Link>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
