@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import ApiFetchRedirect from "../components/ApiFetchRedirect";
 import Footer from "../components/Footer";
+import { Analytics } from "@vercel/analytics/next"; 
 
 export const metadata: Metadata = {
   title: {
@@ -61,6 +62,7 @@ export default function RootLayout({
         <ApiFetchRedirect />
         <div className="flex-1">{children}</div>
         <Footer />
+        <Analytics />
       </body>
     </html>
   );
