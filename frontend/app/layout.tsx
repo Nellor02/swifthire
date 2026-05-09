@@ -1,9 +1,53 @@
+import type { Metadata } from "next";
 import "./globals.css";
 import ApiFetchRedirect from "../components/ApiFetchRedirect";
+import Footer from "../components/Footer";
 
-export const metadata = {
-  title: "SwiftHire",
-  description: "Job platform for seekers and employers",
+export const metadata: Metadata = {
+  title: {
+    default: "SwiftHire | Find Jobs and Talent Faster",
+    template: "%s | SwiftHire",
+  },
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/apple-icon.png",
+  },
+  description:
+    "SwiftHire is a modern hiring platform for job seekers and employers, featuring job applications, talent search, company profiles, and realtime messaging.",
+  keywords: [
+    "SwiftHire",
+    "jobs",
+    "job platform",
+    "hiring platform",
+    "talent search",
+    "job seekers",
+    "employers",
+    "recruitment",
+    "career platform",
+  ],
+  authors: [{ name: "SwiftHire" }],
+  creator: "SwiftHire",
+  publisher: "SwiftHire",
+  metadataBase: new URL("https://useswifthire.com"),
+  openGraph: {
+    title: "SwiftHire | Find Jobs and Talent Faster",
+    description:
+      "A modern hiring platform connecting job seekers and employers through profiles, job applications, and realtime messaging.",
+    url: "https://useswifthire.com",
+    siteName: "SwiftHire",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SwiftHire | Find Jobs and Talent Faster",
+    description:
+      "A modern hiring platform connecting job seekers and employers through profiles, job applications, and realtime messaging.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({
@@ -13,9 +57,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" data-scroll-behavior="smooth">
-      <body className="bg-slate-900 text-slate-100">
+      <body className="flex min-h-screen flex-col bg-slate-900 text-slate-100">
         <ApiFetchRedirect />
-        {children}
+        <div className="flex-1">{children}</div>
+        <Footer />
       </body>
     </html>
   );
