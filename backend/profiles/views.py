@@ -7,6 +7,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 
 from .models import (
     SeekerProfile,
@@ -77,6 +79,31 @@ def create_notification(
     )
 
     return notification
+def serialize_message_for_realtime(message):
+    return {
+        "id": message.id,
+        "sender": message.sender_id,
+        "sender_username": message.sender.username,
+        "sender_role": getattr(message.sender, "role", ""),
+        "sender_avatar": "",
+        "sender_profile_picture": "",
+        "sender_company_logo": "",
+        "body": message.body,
+        "created_at": message.created_at.isoformat(),
+        "is_read": message.is_read,
+    }
+
+
+def broadcast_to_conversation(conversation_id, event):
+    channel_layer = get_channel_layer()
+
+    if not channel_layer:
+        return
+
+    async_to_sync(channel_layer.group_send)(
+        f"chat_{conversation_id}",
+        event,
+    )
 
 
 def get_conversation_for_user_or_404(request, pk):
@@ -482,6 +509,17 @@ class ConversationDetailAPIView(APIView):
 
         marked_read_count = unread_messages.update(is_read=True)
 
+        if marked_read_count > 0:
+            broadcast_to_conversation(
+                conversation.id,
+                {
+                    "type": "messages_read",
+                    "conversation_id": conversation.id,
+                    "reader_username": request.user.username,
+                    "marked_read_count": marked_read_count,
+                },
+            )
+
         serializer = ConversationDetailSerializer(
             conversation,
             context={"request": request},
@@ -598,9 +636,17 @@ class SendMessageAPIView(APIView):
 
         conversation.save(update_fields=["updated_at"])
 
-        serializer = MessageSerializer(message)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        realtime_message = serialize_message_for_realtime(message)
 
+        broadcast_to_conversation(
+            conversation.id,
+            {
+                "type": "chat_message",
+                "message": realtime_message,
+            },
+        )
+
+        return Response(realtime_message, status=status.HTTP_201_CREATED)
 
 class NotificationListAPIView(APIView):
     permission_classes = [IsAuthenticated]
