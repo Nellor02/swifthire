@@ -9,8 +9,10 @@ export const metadata: Metadata = {
     default: "SwiftHire | Find Jobs and Talent Faster",
     template: "%s | SwiftHire",
   },
+
   description:
     "SwiftHire is a modern hiring platform for job seekers and employers, featuring job applications, talent search, company profiles, and realtime messaging.",
+
   keywords: [
     "SwiftHire",
     "jobs",
@@ -22,22 +24,33 @@ export const metadata: Metadata = {
     "recruitment",
     "career platform",
   ],
+
   authors: [{ name: "SwiftHire" }],
+
   creator: "SwiftHire",
+
   publisher: "SwiftHire",
+
   metadataBase: new URL("https://useswifthire.com"),
+
   icons: {
     icon: "/favicon.ico",
     shortcut: "/favicon.ico",
     apple: "/apple-icon.png",
   },
+
   openGraph: {
     title: "SwiftHire | Find Jobs and Talent Faster",
+
     description:
       "A modern hiring platform connecting job seekers and employers through profiles, job applications, and realtime messaging.",
+
     url: "https://useswifthire.com",
+
     siteName: "SwiftHire",
+
     type: "website",
+
     images: [
       {
         url: "/og-image.jpeg",
@@ -47,16 +60,25 @@ export const metadata: Metadata = {
       },
     ],
   },
+
   twitter: {
     card: "summary_large_image",
+
     title: "SwiftHire | Find Jobs and Talent Faster",
+
     description:
       "A modern hiring platform connecting job seekers and employers through profiles, job applications, and realtime messaging.",
+
     images: ["/og-image.jpeg"],
   },
+
   robots: {
     index: true,
     follow: true,
+  },
+
+  verification: {
+    google: "i8UC6Zi9cgfEmXwK5R52WuNv2XNWc4zSKPeh_hVwo7s",
   },
 };
 
@@ -69,8 +91,13 @@ export default function RootLayout({
     <html lang="en" data-scroll-behavior="smooth">
       <body className="flex min-h-screen flex-col bg-slate-900 text-slate-100">
         <ApiFetchRedirect />
-        <div className="flex-1">{children}</div>
+
+        <div className="flex-1">
+          {children}
+        </div>
+
         <Footer />
+
         <Analytics />
       </body>
     </html>
