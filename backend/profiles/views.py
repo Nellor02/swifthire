@@ -32,9 +32,13 @@ def send_notification_email(user, title, message, action_url=""):
         return
 
     site_url = getattr(settings, "FRONTEND_URL", "").rstrip("/")
-    full_action_url = f"{site_url}{action_url}" if site_url and action_url.startswith("/") else action_url
+    full_action_url = (
+        f"{site_url}{action_url}"
+        if site_url and action_url.startswith("/")
+        else action_url
+    )
 
-    email_body = message
+    email_body = message or title
 
     if full_action_url:
         email_body += f"\n\nOpen this notification:\n{full_action_url}"
@@ -48,7 +52,14 @@ def send_notification_email(user, title, message, action_url=""):
     )
 
 
-def create_notification(user, notification_type, title, message="", target_id=None, target_url=""):
+def create_notification(
+    user,
+    notification_type,
+    title,
+    message="",
+    target_id=None,
+    target_url="",
+):
     notification = Notification.objects.create(
         user=user,
         type=notification_type,
@@ -66,6 +77,40 @@ def create_notification(user, notification_type, title, message="", target_id=No
     )
 
     return notification
+
+
+def get_conversation_for_user_or_404(request, pk):
+    try:
+        conversation = (
+            Conversation.objects.select_related(
+                "employer",
+                "seeker",
+                "candidate_profile",
+                "candidate_profile__user",
+            )
+            .prefetch_related("messages__sender")
+            .get(pk=pk)
+        )
+    except Conversation.DoesNotExist:
+        return None, Response(
+            {"error": "Conversation not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    user_role = getattr(request.user, "role", None)
+    is_participant = (
+        request.user.id == conversation.employer_id
+        or request.user.id == conversation.seeker_id
+        or user_role == "admin"
+    )
+
+    if not is_participant:
+        return None, Response(
+            {"error": "You do not have permission to access this conversation."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    return conversation, None
 
 
 class MySeekerProfileAPIView(APIView):
@@ -143,7 +188,11 @@ class TalentSearchAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        queryset = SeekerProfile.objects.filter(is_public=True).select_related("user").order_by("-updated_at")
+        queryset = (
+            SeekerProfile.objects.filter(is_public=True)
+            .select_related("user")
+            .order_by("-updated_at")
+        )
 
         search = request.query_params.get("search", "").strip()
         location = request.query_params.get("location", "").strip()
@@ -174,7 +223,6 @@ class TalentSearchAPIView(APIView):
 
         page_number = request.query_params.get("page", 1)
         paginator = Paginator(queryset, 6)
-
         page = paginator.get_page(page_number)
         serializer = SeekerProfileSerializer(page.object_list, many=True)
 
@@ -201,7 +249,10 @@ class TalentProfileDetailAPIView(APIView):
             )
 
         try:
-            profile = SeekerProfile.objects.select_related("user").get(pk=pk, is_public=True)
+            profile = SeekerProfile.objects.select_related("user").get(
+                pk=pk,
+                is_public=True,
+            )
         except SeekerProfile.DoesNotExist:
             return Response(
                 {"error": "Talent profile not found."},
@@ -223,7 +274,10 @@ class ContactTalentAPIView(APIView):
             )
 
         try:
-            profile = SeekerProfile.objects.select_related("user").get(pk=pk, is_public=True)
+            profile = SeekerProfile.objects.select_related("user").get(
+                pk=pk,
+                is_public=True,
+            )
         except SeekerProfile.DoesNotExist:
             return Response(
                 {"error": "Talent profile not found."},
@@ -279,7 +333,10 @@ class ContactTalentAPIView(APIView):
             target_url="/profile/preview",
         )
 
-        return Response({"message": "Message sent successfully."}, status=status.HTTP_200_OK)
+        return Response(
+            {"message": "Message sent successfully."},
+            status=status.HTTP_200_OK,
+        )
 
 
 class ShortlistCandidateAPIView(APIView):
@@ -293,7 +350,10 @@ class ShortlistCandidateAPIView(APIView):
             )
 
         try:
-            profile = SeekerProfile.objects.select_related("user").get(pk=pk, is_public=True)
+            profile = SeekerProfile.objects.select_related("user").get(
+                pk=pk,
+                is_public=True,
+            )
         except SeekerProfile.DoesNotExist:
             return Response(
                 {"error": "Talent profile not found."},
@@ -350,7 +410,10 @@ class ShortlistCandidateAPIView(APIView):
             )
 
         shortlist.delete()
-        return Response({"message": "Candidate removed from shortlist."}, status=status.HTTP_200_OK)
+        return Response(
+            {"message": "Candidate removed from shortlist."},
+            status=status.HTTP_200_OK,
+        )
 
 
 class EmployerShortlistAPIView(APIView):
@@ -378,35 +441,23 @@ class ConversationListAPIView(APIView):
         user_role = getattr(request.user, "role", None)
 
         if user_role == "employer":
-            conversations = Conversation.objects.filter(
-                employer=request.user
-            ).select_related(
-                "employer",
-                "seeker",
-                "candidate_profile",
-                "candidate_profile__user",
-            ).prefetch_related("messages")
+            conversations = Conversation.objects.filter(employer=request.user)
         elif user_role == "seeker":
-            conversations = Conversation.objects.filter(
-                seeker=request.user
-            ).select_related(
-                "employer",
-                "seeker",
-                "candidate_profile",
-                "candidate_profile__user",
-            ).prefetch_related("messages")
+            conversations = Conversation.objects.filter(seeker=request.user)
         elif user_role == "admin":
-            conversations = Conversation.objects.all().select_related(
-                "employer",
-                "seeker",
-                "candidate_profile",
-                "candidate_profile__user",
-            ).prefetch_related("messages")
+            conversations = Conversation.objects.all()
         else:
             return Response(
                 {"error": "You are not allowed to access conversations."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        conversations = conversations.select_related(
+            "employer",
+            "seeker",
+            "candidate_profile",
+            "candidate_profile__user",
+        ).prefetch_related("messages", "messages__sender")
 
         serializer = ConversationListSerializer(
             conversations,
@@ -420,36 +471,41 @@ class ConversationDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
-        try:
-            conversation = Conversation.objects.select_related(
-                "employer",
-                "seeker",
-                "candidate_profile",
-                "candidate_profile__user",
-            ).prefetch_related("messages__sender").get(pk=pk)
-        except Conversation.DoesNotExist:
-            return Response(
-                {"error": "Conversation not found."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        conversation, error_response = get_conversation_for_user_or_404(request, pk)
 
-        user_role = getattr(request.user, "role", None)
-        is_participant = (
-            request.user.id == conversation.employer_id
-            or request.user.id == conversation.seeker_id
-            or user_role == "admin"
+        if error_response:
+            return error_response
+
+        unread_messages = conversation.messages.filter(
+            is_read=False
+        ).exclude(sender=request.user)
+
+        marked_read_count = unread_messages.update(is_read=True)
+
+        serializer = ConversationDetailSerializer(
+            conversation,
+            context={"request": request},
         )
 
-        if not is_participant:
-            return Response(
-                {"error": "You do not have permission to view this conversation."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        unread_conversation_count = (
+            Conversation.objects.filter(seeker=request.user)
+            if getattr(request.user, "role", None) == "seeker"
+            else Conversation.objects.filter(employer=request.user)
+        )
 
-        conversation.messages.filter(is_read=False).exclude(sender=request.user).update(is_read=True)
+        unread_total = 0
+        for item in unread_conversation_count.prefetch_related("messages"):
+            unread_total += item.messages.filter(is_read=False).exclude(
+                sender=request.user
+            ).count()
 
-        serializer = ConversationDetailSerializer(conversation)
-        return Response(serializer.data)
+        return Response(
+            {
+                "conversation": serializer.data,
+                "marked_read_count": marked_read_count,
+                "unread_total": unread_total,
+            }
+        )
 
 
 class StartConversationAPIView(APIView):
@@ -463,7 +519,10 @@ class StartConversationAPIView(APIView):
             )
 
         try:
-            profile = SeekerProfile.objects.select_related("user").get(pk=pk, is_public=True)
+            profile = SeekerProfile.objects.select_related("user").get(
+                pk=pk,
+                is_public=True,
+            )
         except SeekerProfile.DoesNotExist:
             return Response(
                 {"error": "Talent profile not found."},
@@ -480,16 +539,20 @@ class StartConversationAPIView(APIView):
             conversation.candidate_profile = profile
             conversation.save(update_fields=["candidate_profile", "updated_at"])
 
-        create_notification(
-            user=profile.user,
-            notification_type="message",
-            title="New conversation started",
-            message=f"{request.user.username} started a conversation with you.",
-            target_id=conversation.id,
-            target_url=f"/messages/{conversation.id}",
-        )
+        if created:
+            create_notification(
+                user=profile.user,
+                notification_type="message",
+                title="New conversation started",
+                message=f"{request.user.username} started a conversation with you.",
+                target_id=conversation.id,
+                target_url=f"/messages/{conversation.id}",
+            )
 
-        serializer = ConversationDetailSerializer(conversation)
+        serializer = ConversationDetailSerializer(
+            conversation,
+            context={"request": request},
+        )
         return Response(
             serializer.data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
@@ -500,30 +563,10 @@ class SendMessageAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
-        try:
-            conversation = Conversation.objects.select_related(
-                "employer",
-                "seeker",
-                "candidate_profile",
-            ).get(pk=pk)
-        except Conversation.DoesNotExist:
-            return Response(
-                {"error": "Conversation not found."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        conversation, error_response = get_conversation_for_user_or_404(request, pk)
 
-        user_role = getattr(request.user, "role", None)
-        is_participant = (
-            request.user.id == conversation.employer_id
-            or request.user.id == conversation.seeker_id
-            or user_role == "admin"
-        )
-
-        if not is_participant:
-            return Response(
-                {"error": "You do not have permission to send messages in this conversation."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        if error_response:
+            return error_response
 
         body = request.data.get("body", "").strip()
         if not body:
@@ -592,7 +635,10 @@ class MarkNotificationReadAPIView(APIView):
             notification.save(update_fields=["is_read"])
 
         serializer = NotificationSerializer(notification)
-        unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
+        unread_count = Notification.objects.filter(
+            user=request.user,
+            is_read=False,
+        ).count()
 
         return Response(
             {
@@ -606,7 +652,11 @@ class MarkAllNotificationsReadAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+        Notification.objects.filter(
+            user=request.user,
+            is_read=False,
+        ).update(is_read=True)
+
         return Response(
             {
                 "message": "All notifications marked as read.",

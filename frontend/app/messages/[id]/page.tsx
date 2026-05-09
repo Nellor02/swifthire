@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { authFetch, getApiBaseUrl, getFileUrl } from "../../../lib/api";
+import { authFetch, getFileUrl } from "../../../lib/api";
 import { getStoredUser } from "../../../lib/auth";
 import StatusCard from "../../../components/StatusCard";
 
@@ -20,7 +20,7 @@ type CandidateProfile = {
 
 type Message = {
   id: number;
-  sender?: number;
+  sender: number;
   sender_username: string;
   sender_role?: string;
   sender_profile_picture?: string | null;
@@ -28,7 +28,7 @@ type Message = {
   sender_avatar?: string | null;
   body: string;
   created_at: string;
-  is_read?: boolean;
+  is_read: boolean;
 };
 
 type ConversationDetail = {
@@ -55,37 +55,23 @@ async function parseResponseSafely(res: Response) {
   return { error: text || `Request failed with status ${res.status}` };
 }
 
-function getAccessToken() {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem("access_token") || "";
-}
-
-function getWebSocketBaseUrl() {
-  const apiBaseUrl = getApiBaseUrl();
-
-  if (apiBaseUrl.startsWith("https://")) {
-    return apiBaseUrl.replace("https://", "wss://");
-  }
-
-  if (apiBaseUrl.startsWith("http://")) {
-    return apiBaseUrl.replace("http://", "ws://");
-  }
-
-  return "ws://127.0.0.1:8000";
-}
-
 function formatDate(dateString?: string) {
   if (!dateString) return "Unknown time";
 
   const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return "Unknown time";
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown time";
+  }
 
   return date.toLocaleString();
 }
 
 function getInitials(name?: string) {
   const cleaned = (name || "").trim();
+
   if (!cleaned) return "SH";
+
   return cleaned.slice(0, 2).toUpperCase();
 }
 
@@ -99,28 +85,38 @@ function getMessageAvatarUrl(message: Message) {
 
 export default function MessageThreadPage() {
   const params = useParams<{ id: string | string[] }>();
+
   const rawId = params?.id;
   const conversationId = Array.isArray(rawId) ? rawId[0] : rawId;
-
-  const bottomRef = useRef<HTMLDivElement | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
 
   const [userChecked, setUserChecked] = useState(false);
   const [user, setUser] = useState<StoredUser | null>(null);
 
-  const [conversation, setConversation] = useState<ConversationDetail | null>(null);
+  const [conversation, setConversation] =
+    useState<ConversationDetail | null>(null);
+
   const [loading, setLoading] = useState(true);
-  const [socketConnected, setSocketConnected] = useState(false);
   const [error, setError] = useState("");
 
   const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
 
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     const storedUser = getStoredUser();
+
     setUser(storedUser);
     setUserChecked(true);
   }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
+  }, [conversation?.messages]);
 
   async function loadConversation() {
     if (!conversationId) return;
@@ -130,109 +126,119 @@ export default function MessageThreadPage() {
 
     try {
       const res = await authFetch(`/api/profiles/messages/${conversationId}/`);
+
       const data = await parseResponseSafely(res);
 
       if (!res.ok) {
         throw new Error(data?.error || "Could not load conversation.");
       }
 
-      setConversation(data);
+      setConversation(data.conversation ?? data);
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : "Could not load conversation.");
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not load conversation."
+      );
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    if (!userChecked || !user || !conversationId) return;
+    if (!userChecked || !user || !conversationId) {
+      return;
+    }
+
     loadConversation();
   }, [userChecked, user, conversationId]);
 
   useEffect(() => {
-    if (!userChecked || !user || !conversationId) return;
-
-    const token = getAccessToken();
-
-    if (!token) {
-      setSocketConnected(false);
+    if (!conversationId || !user) {
       return;
     }
 
-    const wsBaseUrl = getWebSocketBaseUrl();
-    const socketUrl = `${wsBaseUrl}/ws/messages/${conversationId}/?token=${encodeURIComponent(
-      token
-    )}`;
+    const token = localStorage.getItem("access");
+
+    if (!token) {
+      return;
+    }
+
+    const protocol =
+      window.location.protocol === "https:" ? "wss" : "ws";
+
+    const wsBase =
+      process.env.NEXT_PUBLIC_WS_BASE_URL ||
+      `${protocol}://${window.location.host}`;
+
+    const socketUrl =
+      `${wsBase}/ws/messages/${conversationId}/?token=${token}`;
 
     const socket = new WebSocket(socketUrl);
+
     socketRef.current = socket;
 
     socket.onopen = () => {
-      setSocketConnected(true);
+      console.log("WebSocket connected");
     };
 
     socket.onmessage = (event) => {
       try {
-        const incoming = JSON.parse(event.data) as Message;
+        const data = JSON.parse(event.data);
 
-        setConversation((prev) => {
-          if (!prev) return prev;
+        if (data.type === "chat_message") {
+          setConversation((prev) => {
+            if (!prev) return prev;
 
-          const alreadyExists = prev.messages.some(
-            (message) => String(message.id) === String(incoming.id)
-          );
+            const alreadyExists = prev.messages.some(
+              (msg) => msg.id === data.message.id
+            );
 
-          if (alreadyExists) return prev;
+            if (alreadyExists) {
+              return prev;
+            }
 
-          return {
-            ...prev,
-            messages: [...prev.messages, incoming],
-          };
-        });
+            return {
+              ...prev,
+              messages: [...prev.messages, data.message],
+            };
+          });
+        }
       } catch (err) {
-        console.error("Invalid WebSocket message:", err);
+        console.error("WebSocket message error:", err);
       }
     };
 
-    socket.onerror = (event) => {
-      console.error("WebSocket error:", event);
-      setSocketConnected(false);
+    socket.onerror = (err) => {
+      console.error("WebSocket error:", err);
     };
 
     socket.onclose = () => {
-      setSocketConnected(false);
+      console.log("WebSocket disconnected");
     };
 
     return () => {
       socket.close();
-      socketRef.current = null;
-      setSocketConnected(false);
     };
-  }, [userChecked, user, conversationId]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversation?.messages.length]);
+  }, [conversationId, user]);
 
   async function handleSendMessage() {
-    const body = messageInput.trim();
-    if (!body || sending) return;
+    if (!messageInput.trim()) return;
 
     setSending(true);
-    setError("");
 
     try {
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ message: body }));
-        setMessageInput("");
-        return;
-      }
-
-      const res = await authFetch(`/api/profiles/messages/${conversationId}/send/`, {
-        method: "POST",
-        body: JSON.stringify({ body }),
-      });
+      const res = await authFetch(
+        `/api/profiles/messages/${conversationId}/send/`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            body: messageInput.trim(),
+          }),
+        }
+      );
 
       const data = await parseResponseSafely(res);
 
@@ -241,10 +247,14 @@ export default function MessageThreadPage() {
       }
 
       setMessageInput("");
-      await loadConversation();
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : "Failed to send message.");
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to send message."
+      );
     } finally {
       setSending(false);
     }
@@ -257,8 +267,14 @@ export default function MessageThreadPage() {
       return conversation.other_user_username;
     }
 
-    if (user.role === "employer" || user.role === "admin") {
-      return conversation.candidate_profile?.full_name || conversation.seeker_username;
+    if (
+      user.role === "employer" ||
+      user.role === "admin"
+    ) {
+      return (
+        conversation.candidate_profile?.full_name ||
+        conversation.seeker_username
+      );
     }
 
     return conversation.employer_username;
@@ -271,7 +287,10 @@ export default function MessageThreadPage() {
       return getFileUrl(conversation.other_user_avatar);
     }
 
-    if (user.role === "employer" || user.role === "admin") {
+    if (
+      user.role === "employer" ||
+      user.role === "admin"
+    ) {
       return getFileUrl(
         conversation.seeker_profile_picture ||
           conversation.candidate_profile?.profile_picture
@@ -318,12 +337,13 @@ export default function MessageThreadPage() {
 
             <div>
               <h1 className="text-3xl font-bold text-slate-100">
-                {otherUser ? `Chat with ${otherUser}` : "Conversation"}
+                {otherUser
+                  ? `Chat with ${otherUser}`
+                  : "Conversation"}
               </h1>
+
               <p className="mt-1 text-slate-300">
-                {socketConnected
-                  ? "Real-time chat connected."
-                  : "Real-time chat reconnecting or unavailable."}
+                Send and receive messages.
               </p>
             </div>
           </div>
@@ -360,19 +380,26 @@ export default function MessageThreadPage() {
           />
         ) : (
           <>
-            <div className="mb-6 max-h-[60vh] space-y-4 overflow-y-auto rounded-xl border border-slate-700 bg-slate-800 p-4">
+            <div className="mb-6 space-y-4 rounded-xl border border-slate-700 bg-slate-800 p-4">
               {conversation.messages.length === 0 ? (
-                <p className="text-slate-400">No messages yet.</p>
+                <p className="text-slate-400">
+                  No messages yet.
+                </p>
               ) : (
                 conversation.messages.map((msg) => {
-                  const isMine = msg.sender_username === user.username;
-                  const messageAvatarUrl = getMessageAvatarUrl(msg);
+                  const isMine =
+                    msg.sender_username === user.username;
+
+                  const messageAvatarUrl =
+                    getMessageAvatarUrl(msg);
 
                   return (
                     <div
                       key={msg.id}
                       className={`flex items-end gap-3 ${
-                        isMine ? "justify-end" : "justify-start"
+                        isMine
+                          ? "justify-end"
+                          : "justify-start"
                       }`}
                     >
                       {!isMine && (
@@ -397,10 +424,14 @@ export default function MessageThreadPage() {
                         }`}
                       >
                         <div className="mb-1 text-xs opacity-80">
-                          {isMine ? "You" : msg.sender_username}
+                          {isMine
+                            ? "You"
+                            : msg.sender_username}
                         </div>
 
-                        <p className="whitespace-pre-line">{msg.body}</p>
+                        <p className="whitespace-pre-line">
+                          {msg.body}
+                        </p>
 
                         <p className="mt-2 text-right text-xs opacity-70">
                           {formatDate(msg.created_at)}
@@ -425,36 +456,38 @@ export default function MessageThreadPage() {
                 })
               )}
 
-              <div ref={bottomRef} />
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="flex gap-2">
-              <textarea
+              <input
                 value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
+                onChange={(e) =>
+                  setMessageInput(e.target.value)
+                }
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (
+                    e.key === "Enter" &&
+                    !e.shiftKey
+                  ) {
                     e.preventDefault();
                     handleSendMessage();
                   }
                 }}
                 placeholder="Type your message..."
-                rows={2}
-                className="flex-1 resize-none rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-blue-500"
+                className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 outline-none focus:border-blue-500"
               />
 
               <button
                 onClick={handleSendMessage}
-                disabled={sending || !messageInput.trim()}
-                className="self-end rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700 disabled:opacity-50"
+                disabled={
+                  sending || !messageInput.trim()
+                }
+                className="rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {sending ? "Sending..." : "Send"}
               </button>
             </div>
-
-            <p className="mt-2 text-xs text-slate-500">
-              Press Enter to send. Press Shift + Enter for a new line.
-            </p>
           </>
         )}
       </div>
