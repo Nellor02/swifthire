@@ -91,10 +91,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def user_in_conversation(self):
         try:
             conversation = Conversation.objects.get(id=self.conversation_id)
-            return self.user.id in [
-                conversation.employer_id,
-                conversation.seeker_id,
-            ] or getattr(self.user, "role", "") == "admin"
+
+            return (
+                self.user.id == conversation.employer_id
+                or self.user.id == conversation.seeker_id
+                or getattr(self.user, "role", "") == "admin"
+            )
         except Conversation.DoesNotExist:
             return False
 
