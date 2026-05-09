@@ -83,6 +83,21 @@ function getMessageAvatarUrl(message: Message) {
   );
 }
 
+function normalizeIncomingMessage(message: Partial<Message>): Message {
+  return {
+    id: Number(message.id || Date.now()),
+    sender: Number(message.sender || 0),
+    sender_username: message.sender_username || "Unknown",
+    sender_role: message.sender_role || "",
+    sender_profile_picture: message.sender_profile_picture || null,
+    sender_company_logo: message.sender_company_logo || null,
+    sender_avatar: message.sender_avatar || null,
+    body: message.body || "",
+    created_at: message.created_at || new Date().toISOString(),
+    is_read: Boolean(message.is_read),
+  };
+}
+
 export default function MessageThreadPage() {
   const params = useParams<{ id: string | string[] }>();
 
@@ -91,9 +106,9 @@ export default function MessageThreadPage() {
 
   const [userChecked, setUserChecked] = useState(false);
   const [user, setUser] = useState<StoredUser | null>(null);
-
-  const [conversation, setConversation] =
-    useState<ConversationDetail | null>(null);
+  const [conversation, setConversation] = useState<ConversationDetail | null>(
+    null
+  );
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -102,7 +117,6 @@ export default function MessageThreadPage() {
   const [sending, setSending] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
-
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -126,7 +140,6 @@ export default function MessageThreadPage() {
 
     try {
       const res = await authFetch(`/api/profiles/messages/${conversationId}/`);
-
       const data = await parseResponseSafely(res);
 
       if (!res.ok) {
@@ -136,11 +149,8 @@ export default function MessageThreadPage() {
       setConversation(data.conversation ?? data);
     } catch (err) {
       console.error(err);
-
       setError(
-        err instanceof Error
-          ? err.message
-          : "Could not load conversation."
+        err instanceof Error ? err.message : "Could not load conversation."
       );
     } finally {
       setLoading(false);
@@ -160,21 +170,22 @@ export default function MessageThreadPage() {
       return;
     }
 
-    const token = localStorage.getItem("access");
+    const token =
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("access") ||
+      "";
 
     if (!token) {
       return;
     }
 
-    const protocol =
-      window.location.protocol === "https:" ? "wss" : "ws";
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
 
     const wsBase =
       process.env.NEXT_PUBLIC_WS_BASE_URL ||
       `${protocol}://${window.location.host}`;
 
-    const socketUrl =
-      `${wsBase}/ws/messages/${conversationId}/?token=${token}`;
+    const socketUrl = `${wsBase}/ws/messages/${conversationId}/?token=${token}`;
 
     const socket = new WebSocket(socketUrl);
 
@@ -189,11 +200,13 @@ export default function MessageThreadPage() {
         const data = JSON.parse(event.data);
 
         if (data.type === "chat_message") {
+          const incomingMessage = normalizeIncomingMessage(data.message);
+
           setConversation((prev) => {
             if (!prev) return prev;
 
             const alreadyExists = prev.messages.some(
-              (msg) => msg.id === data.message.id
+              (msg) => String(msg.id) === String(incomingMessage.id)
             );
 
             if (alreadyExists) {
@@ -202,7 +215,22 @@ export default function MessageThreadPage() {
 
             return {
               ...prev,
-              messages: [...prev.messages, data.message],
+              messages: [...prev.messages, incomingMessage],
+            };
+          });
+        }
+
+        if (data.type === "messages_read") {
+          setConversation((prev) => {
+            if (!prev) return prev;
+
+            return {
+              ...prev,
+              messages: prev.messages.map((msg) =>
+                msg.sender_username === user.username
+                  ? { ...msg, is_read: true }
+                  : msg
+              ),
             };
           });
         }
@@ -221,13 +249,17 @@ export default function MessageThreadPage() {
 
     return () => {
       socket.close();
+      socketRef.current = null;
     };
   }, [conversationId, user]);
 
   async function handleSendMessage() {
-    if (!messageInput.trim()) return;
+    const trimmedMessage = messageInput.trim();
+
+    if (!trimmedMessage) return;
 
     setSending(true);
+    setError("");
 
     try {
       const res = await authFetch(
@@ -235,7 +267,7 @@ export default function MessageThreadPage() {
         {
           method: "POST",
           body: JSON.stringify({
-            body: messageInput.trim(),
+            body: trimmedMessage,
           }),
         }
       );
@@ -247,13 +279,27 @@ export default function MessageThreadPage() {
       }
 
       setMessageInput("");
+
+      setConversation((prev) => {
+        if (!prev) return prev;
+
+        const newMessage = normalizeIncomingMessage(data);
+
+        const alreadyExists = prev.messages.some(
+          (msg) => String(msg.id) === String(newMessage.id)
+        );
+
+        if (alreadyExists) return prev;
+
+        return {
+          ...prev,
+          messages: [...prev.messages, newMessage],
+        };
+      });
     } catch (err) {
       console.error(err);
-
       setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to send message."
+        err instanceof Error ? err.message : "Failed to send message."
       );
     } finally {
       setSending(false);
@@ -267,10 +313,7 @@ export default function MessageThreadPage() {
       return conversation.other_user_username;
     }
 
-    if (
-      user.role === "employer" ||
-      user.role === "admin"
-    ) {
+    if (user.role === "employer" || user.role === "admin") {
       return (
         conversation.candidate_profile?.full_name ||
         conversation.seeker_username
@@ -287,10 +330,7 @@ export default function MessageThreadPage() {
       return getFileUrl(conversation.other_user_avatar);
     }
 
-    if (
-      user.role === "employer" ||
-      user.role === "admin"
-    ) {
+    if (user.role === "employer" || user.role === "admin") {
       return getFileUrl(
         conversation.seeker_profile_picture ||
           conversation.candidate_profile?.profile_picture
@@ -337,9 +377,7 @@ export default function MessageThreadPage() {
 
             <div>
               <h1 className="text-3xl font-bold text-slate-100">
-                {otherUser
-                  ? `Chat with ${otherUser}`
-                  : "Conversation"}
+                {otherUser ? `Chat with ${otherUser}` : "Conversation"}
               </h1>
 
               <p className="mt-1 text-slate-300">
@@ -382,24 +420,17 @@ export default function MessageThreadPage() {
           <>
             <div className="mb-6 space-y-4 rounded-xl border border-slate-700 bg-slate-800 p-4">
               {conversation.messages.length === 0 ? (
-                <p className="text-slate-400">
-                  No messages yet.
-                </p>
+                <p className="text-slate-400">No messages yet.</p>
               ) : (
                 conversation.messages.map((msg) => {
-                  const isMine =
-                    msg.sender_username === user.username;
-
-                  const messageAvatarUrl =
-                    getMessageAvatarUrl(msg);
+                  const isMine = msg.sender_username === user.username;
+                  const messageAvatarUrl = getMessageAvatarUrl(msg);
 
                   return (
                     <div
                       key={msg.id}
                       className={`flex items-end gap-3 ${
-                        isMine
-                          ? "justify-end"
-                          : "justify-start"
+                        isMine ? "justify-end" : "justify-start"
                       }`}
                     >
                       {!isMine && (
@@ -424,17 +455,18 @@ export default function MessageThreadPage() {
                         }`}
                       >
                         <div className="mb-1 text-xs opacity-80">
-                          {isMine
-                            ? "You"
-                            : msg.sender_username}
+                          {isMine ? "You" : msg.sender_username}
                         </div>
 
-                        <p className="whitespace-pre-line">
-                          {msg.body}
-                        </p>
+                        <p className="whitespace-pre-line">{msg.body}</p>
 
                         <p className="mt-2 text-right text-xs opacity-70">
                           {formatDate(msg.created_at)}
+                          {isMine && (
+                            <span className="ml-2 font-semibold">
+                              {msg.is_read ? "Read" : "Sent"}
+                            </span>
+                          )}
                         </p>
                       </div>
 
@@ -462,14 +494,9 @@ export default function MessageThreadPage() {
             <div className="flex gap-2">
               <input
                 value={messageInput}
-                onChange={(e) =>
-                  setMessageInput(e.target.value)
-                }
+                onChange={(e) => setMessageInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (
-                    e.key === "Enter" &&
-                    !e.shiftKey
-                  ) {
+                  if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     handleSendMessage();
                   }
@@ -480,9 +507,7 @@ export default function MessageThreadPage() {
 
               <button
                 onClick={handleSendMessage}
-                disabled={
-                  sending || !messageInput.trim()
-                }
+                disabled={sending || !messageInput.trim()}
                 className="rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {sending ? "Sending..." : "Send"}
