@@ -152,19 +152,107 @@ class EmployerApplicationMeAPIView(APIView):
             )
 
 
-class AdminEmployerApplicationListAPIView(APIView):
+class AdminEmployerApplicationReviewAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def patch(self, request, pk):
         if getattr(request.user, "role", None) != "admin":
             return Response(
-                {"error": "Only admins can view employer applications."},
+                {"error": "Only admins can review employer applications."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        applications = EmployerApplication.objects.select_related("user").all().order_by("-submitted_at")
-        serializer = EmployerApplicationSerializer(applications, many=True)
-        return Response(serializer.data)
+        try:
+            application = EmployerApplication.objects.select_related("user").get(pk=pk)
+        except EmployerApplication.DoesNotExist:
+            return Response(
+                {"error": "Employer application not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_status = str(request.data.get("status", "")).strip().lower()
+        admin_notes = str(request.data.get("admin_notes", "")).strip()
+
+        if new_status not in {"approved", "rejected"}:
+            return Response(
+                {"error": "Status must be either 'approved' or 'rejected'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        application.status = new_status
+        application.admin_notes = admin_notes
+        application.reviewed_at = timezone.now()
+
+        application.save(
+            update_fields=[
+                "status",
+                "admin_notes",
+                "reviewed_at",
+            ]
+        )
+
+        if new_status == "approved":
+            user = application.user
+            user.role = "employer"
+            user.save(update_fields=["role"])
+
+            from companies.models import Company
+
+            company_exists = Company.objects.filter(owner=user).exists()
+
+            if not company_exists:
+                Company.objects.create(
+                    owner=user,
+                    name=application.company_name,
+                    email=application.company_email,
+                    phone=application.company_phone,
+                    website=application.company_website,
+                    address=application.company_address,
+                    description=application.business_description,
+                )
+
+        notify_employer_application_review(application)
+
+        if application.user.email:
+            if new_status == "approved":
+                send_platform_email(
+                    subject="SwiftHire Employer Application Approved",
+                    message=(
+                        f"Hello {application.user.username},\n\n"
+                        f"Your employer application for {application.company_name} "
+                        f"has been approved.\n\n"
+                        f"You can now:\n"
+                        f"- Create company profiles\n"
+                        f"- Post jobs\n"
+                        f"- Review applicants\n"
+                        f"- Message candidates\n"
+                        f"- Manage hiring workflows\n\n"
+                        f"Welcome to SwiftHire."
+                    ),
+                    recipient_list=[application.user.email],
+                    email_type="support",
+                )
+
+            else:
+                send_platform_email(
+                    subject="SwiftHire Employer Application Update",
+                    message=(
+                        f"Hello {application.user.username},\n\n"
+                        f"Your employer application for {application.company_name} "
+                        f"has been reviewed and was rejected.\n\n"
+                        f"Admin notes:\n"
+                        f"{application.admin_notes or 'No additional notes provided.'}"
+                    ),
+                    recipient_list=[application.user.email],
+                    email_type="support",
+                )
+
+        serializer = EmployerApplicationSerializer(application)
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminEmployerApplicationDetailAPIView(APIView):
