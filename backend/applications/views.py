@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from jobs.models import Job
 from .models import Application
 from .serializers import ApplicationSerializer
-from profiles.models import Notification
+from accounts.utils import create_notification, send_platform_email
 from accounts.models import EmployerApplication
 
 
@@ -88,13 +88,28 @@ class ApplyToJobAPIView(APIView):
         )
 
         company_owner = getattr(job.company, "owner", None)
+
         if company_owner:
-            Notification.objects.create(
+            create_notification(
                 user=company_owner,
-                type="application",
+                notification_type="application",
                 title="New job application",
                 message=f"{request.user.username} applied for {job.title}.",
                 target_id=job.id,
+                target_url=f"/employer/jobs/{job.id}/applicants",
+                email_type="support",
+            )
+
+        if request.user.email:
+            send_platform_email(
+                subject="Application Submitted",
+                message=(
+                    f"Hello {request.user.username},\n\n"
+                    f"Your application for {job.title} has been submitted successfully.\n\n"
+                    f"You can track your applications from your SwiftHire dashboard."
+                ),
+                recipient_list=[request.user.email],
+                email_type="support",
             )
 
         serializer = ApplicationSerializer(application)
@@ -243,13 +258,15 @@ class UpdateApplicationStatusAPIView(APIView):
         application.status = new_status
         application.save()
 
-        Notification.objects.create(
+        create_notification(
             user=application.applicant,
-            type="status_update",
+            notification_type="status_update",
             title="Application status updated",
             message=f"Your application for {application.job.title} is now {new_status}.",
             target_id=application.id,
-        )
+            target_url=f"/my-applications/{application.id}",
+            email_type="support",
+)
 
         serializer = ApplicationSerializer(application)
         return Response(serializer.data)
@@ -370,6 +387,7 @@ class SeekerDashboardStatsAPIView(APIView):
         reviewed_applications = applications.filter(status="reviewed").count()
         accepted_applications = applications.filter(status="accepted").count()
         rejected_applications = applications.filter(status="rejected").count()
+        from profiles.models import Notification
         unread_notifications = Notification.objects.filter(
             user=request.user,
             is_read=False,

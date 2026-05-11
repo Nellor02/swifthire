@@ -253,7 +253,24 @@ class AdminEmployerApplicationReviewAPIView(APIView):
             serializer.data,
             status=status.HTTP_200_OK,
         )
+class AdminEmployerApplicationListAPIView(APIView):
+    permission_classes = [IsAuthenticated]
 
+    def get(self, request):
+        if getattr(request.user, "role", None) != "admin":
+            return Response(
+                {"error": "Only admins can view employer applications."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        applications = (
+            EmployerApplication.objects.select_related("user")
+            .all()
+            .order_by("-submitted_at")
+        )
+
+        serializer = EmployerApplicationSerializer(applications, many=True)
+        return Response(serializer.data)
 
 class AdminEmployerApplicationDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
