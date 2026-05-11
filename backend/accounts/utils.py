@@ -34,15 +34,13 @@ def get_swifthire_email_address(email_type="support"):
 
 
 def get_swifthire_from_email(email_type="support"):
-    email_address = get_swifthire_email_address(email_type)
+    support_email = getattr(
+        settings,
+        "SWIFTHIRE_SUPPORT_EMAIL",
+        "support@useswifthire.com",
+    )
 
-    if email_type in ["welcome", "onboarding", "hello"]:
-        return f"SwiftHire <{email_address}>"
-
-    if email_type in ["contact", "contact_form", "direct_contact"]:
-        return f"SwiftHire Contact <{email_address}>"
-
-    return f"SwiftHire Support <{email_address}>"
+    return f"SwiftHire Support <{support_email}>"
 
 
 def send_platform_email(
