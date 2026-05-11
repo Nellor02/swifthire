@@ -7,7 +7,77 @@ from profiles.models import Notification
 User = get_user_model()
 
 
-def create_notification(user, notification_type, title, message, target_id=None):
+def get_swifthire_email_address(email_type="support"):
+    support_email = getattr(
+        settings,
+        "SWIFTHIRE_SUPPORT_EMAIL",
+        "support@useswifthire.com",
+    )
+    hello_email = getattr(
+        settings,
+        "SWIFTHIRE_HELLO_EMAIL",
+        "hello@useswifthire.com",
+    )
+    contact_email = getattr(
+        settings,
+        "SWIFTHIRE_CONTACT_EMAIL",
+        "contact@useswifthire.com",
+    )
+
+    if email_type in ["welcome", "onboarding", "hello"]:
+        return hello_email
+
+    if email_type in ["contact", "contact_form", "direct_contact"]:
+        return contact_email
+
+    return support_email
+
+
+def get_swifthire_from_email(email_type="support"):
+    email_address = get_swifthire_email_address(email_type)
+
+    if email_type in ["welcome", "onboarding", "hello"]:
+        return f"SwiftHire <{email_address}>"
+
+    if email_type in ["contact", "contact_form", "direct_contact"]:
+        return f"SwiftHire Contact <{email_address}>"
+
+    return f"SwiftHire Support <{email_address}>"
+
+
+def send_platform_email(
+    subject,
+    message,
+    recipient_list,
+    email_type="support",
+    fail_silently=True,
+):
+    if not recipient_list:
+        return False
+
+    try:
+        send_mail(
+            subject=subject,
+            message=f"{message}\n\n— SwiftHire",
+            from_email=get_swifthire_from_email(email_type),
+            recipient_list=recipient_list,
+            fail_silently=fail_silently,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def create_notification(
+    user,
+    notification_type,
+    title,
+    message,
+    target_id=None,
+    target_url="",
+    email_type="support",
+    send_email=True,
+):
     try:
         Notification.objects.create(
             user=user,
@@ -15,9 +85,33 @@ def create_notification(user, notification_type, title, message, target_id=None)
             title=title,
             message=message,
             target_id=target_id,
+            target_url=target_url or "",
         )
     except Exception:
         pass
+
+    if send_email:
+        recipient_email = getattr(user, "email", "").strip()
+
+        if recipient_email:
+            site_url = getattr(settings, "FRONTEND_URL", "").rstrip("/")
+            full_action_url = (
+                f"{site_url}{target_url}"
+                if site_url and target_url.startswith("/")
+                else target_url
+            )
+
+            email_message = message
+
+            if full_action_url:
+                email_message += f"\n\nOpen here:\n{full_action_url}"
+
+            send_platform_email(
+                subject=title,
+                message=email_message,
+                recipient_list=[recipient_email],
+                email_type=email_type,
+            )
 
 
 def notify_admins_new_employer_application(application):
@@ -33,6 +127,8 @@ def notify_admins_new_employer_application(application):
                 f"{application.user.username} for {application.company_name}."
             ),
             target_id=application.id,
+            target_url=f"/admin/employer-applications/{application.id}",
+            email_type="support",
         )
 
 
@@ -43,11 +139,17 @@ def notify_employer_application_review(application):
             f"Your employer application for {application.company_name} has been approved. "
             f"You can now log in and use your employer dashboard."
         )
+        target_url = "/employer/jobs"
     elif application.status == "rejected":
         title = "Employer Application Rejected"
         message = (
             f"Your employer application for {application.company_name} was rejected."
         )
+
+        if application.admin_notes:
+            message += f"\n\nAdmin notes: {application.admin_notes}"
+
+        target_url = "/employer/application-status"
     else:
         return
 
@@ -57,20 +159,6 @@ def notify_employer_application_review(application):
         title=title,
         message=message,
         target_id=application.id,
+        target_url=target_url,
+        email_type="support",
     )
-
-
-def send_platform_email(subject, message, recipient_list):
-    if not recipient_list:
-        return
-
-    try:
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=recipient_list,
-            fail_silently=True,
-        )
-    except Exception:
-        pass

@@ -27,13 +27,34 @@ from .serializers import (
 )
 
 
-def send_notification_email(user, title, message, action_url=""):
+def get_swifthire_from_email(email_type="notification"):
+    support_email = getattr(settings, "SWIFTHIRE_SUPPORT_EMAIL", "support@useswifthire.com")
+    hello_email = getattr(settings, "SWIFTHIRE_HELLO_EMAIL", "hello@useswifthire.com")
+    contact_email = getattr(settings, "SWIFTHIRE_CONTACT_EMAIL", "contact@useswifthire.com")
+
+    if email_type in ["welcome", "onboarding"]:
+        return f"SwiftHire <{hello_email}>"
+
+    if email_type in ["contact", "contact_form", "direct_contact"]:
+        return f"SwiftHire Contact <{contact_email}>"
+
+    return f"SwiftHire Support <{support_email}>"
+
+
+def send_notification_email(
+    user,
+    title,
+    message,
+    action_url="",
+    email_type="notification",
+):
     recipient_email = getattr(user, "email", "").strip()
 
     if not recipient_email:
         return
 
     site_url = getattr(settings, "FRONTEND_URL", "").rstrip("/")
+
     full_action_url = (
         f"{site_url}{action_url}"
         if site_url and action_url.startswith("/")
@@ -43,12 +64,14 @@ def send_notification_email(user, title, message, action_url=""):
     email_body = message or title
 
     if full_action_url:
-        email_body += f"\n\nOpen this notification:\n{full_action_url}"
+        email_body += f"\n\nOpen here:\n{full_action_url}"
+
+    email_body += "\n\n— SwiftHire"
 
     send_mail(
         subject=title,
         message=email_body,
-        from_email=None,
+        from_email=get_swifthire_from_email(email_type),
         recipient_list=[recipient_email],
         fail_silently=False,
     )
@@ -76,6 +99,7 @@ def create_notification(
         title=title,
         message=message or title,
         action_url=target_url or "",
+        email_type=notification_type,
     )
 
     return notification
@@ -346,7 +370,7 @@ class ContactTalentAPIView(APIView):
         send_mail(
             subject=subject,
             message=full_message,
-            from_email=None,
+            from_email=get_swifthire_from_email("contact"),
             recipient_list=[recipient_email],
             fail_silently=False,
         )

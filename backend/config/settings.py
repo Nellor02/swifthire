@@ -218,22 +218,45 @@ SECURE_HSTS_PRELOAD = os.getenv("DJANGO_SECURE_HSTS_PRELOAD", "False").lower() =
 
 EMAIL_BACKEND = os.getenv(
     "DJANGO_EMAIL_BACKEND",
-    "django.core.mail.backends.console.EmailBackend",
+    "django.core.mail.backends.smtp.EmailBackend",
 )
 
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.sendgrid.net")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.zoho.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "apikey")
+
+EMAIL_HOST_USER = os.getenv(
+    "EMAIL_HOST_USER",
+    "support@useswifthire.com",
+)
+
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+
+SWIFTHIRE_SUPPORT_EMAIL = os.getenv(
+    "SWIFTHIRE_SUPPORT_EMAIL",
+    "support@useswifthire.com",
+)
+
+SWIFTHIRE_HELLO_EMAIL = os.getenv(
+    "SWIFTHIRE_HELLO_EMAIL",
+    "hello@useswifthire.com",
+)
+
+SWIFTHIRE_CONTACT_EMAIL = os.getenv(
+    "SWIFTHIRE_CONTACT_EMAIL",
+    "contact@useswifthire.com",
+)
 
 DEFAULT_FROM_EMAIL = os.getenv(
     "DJANGO_DEFAULT_FROM_EMAIL",
-    "SwiftHire <nellorchamp@gmail.com>",
+    f"SwiftHire Support <{SWIFTHIRE_SUPPORT_EMAIL}>",
 )
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+SERVER_EMAIL = SWIFTHIRE_SUPPORT_EMAIL
+CONTACT_EMAIL = SWIFTHIRE_CONTACT_EMAIL
+HELLO_EMAIL = SWIFTHIRE_HELLO_EMAIL
 
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 # ======================
 # CLOUDINARY
 # ======================

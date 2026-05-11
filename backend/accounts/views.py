@@ -42,8 +42,28 @@ class CurrentUserAPIView(APIView):
 class SeekerRegisterAPIView(APIView):
     def post(self, request):
         serializer = SeekerRegisterSerializer(data=request.data)
+
         if serializer.is_valid():
-            serializer.save()
+            user = serializer.save()
+
+            if user.email:
+                send_platform_email(
+                    subject="Welcome to SwiftHire",
+                    message=(
+                        f"Hello {user.username},\n\n"
+                        f"Welcome to SwiftHire. Your seeker account has been created successfully.\n\n"
+                        f"You can now:\n"
+                        f"- Build your professional profile\n"
+                        f"- Browse job opportunities\n"
+                        f"- Apply to jobs\n"
+                        f"- Connect with employers\n"
+                        f"- Receive real-time updates and notifications\n\n"
+                        f"We're excited to have you on SwiftHire."
+                    ),
+                    recipient_list=[user.email],
+                    email_type="welcome",
+                )
+
             return Response(
                 {
                     "message": "Seeker account created successfully.",
@@ -54,10 +74,10 @@ class SeekerRegisterAPIView(APIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
 class EmployerApplyAPIView(APIView):
     def post(self, request):
         serializer = EmployerApplicationRegisterSerializer(data=request.data)
+
         if serializer.is_valid():
             application = serializer.save()
 
@@ -70,9 +90,11 @@ class EmployerApplyAPIView(APIView):
                         f"Hello {application.user.username},\n\n"
                         f"Your employer application for {application.company_name} "
                         f"has been received and is currently pending review.\n\n"
-                        f"You can log in to SwiftHire to track your application status."
+                        f"You can log in to SwiftHire to track your application status.\n\n"
+                        f"We will notify you once your application has been reviewed."
                     ),
                     recipient_list=[application.user.email],
+                    email_type="support",
                 )
 
             return Response(
