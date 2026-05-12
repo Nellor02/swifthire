@@ -324,7 +324,12 @@ export default function AuthStatus() {
                   >
                     Messages
                   </Link>
-
+                  <Link
+                    href="/account/delete"
+                    className="rounded-lg bg-red-900 px-4 py-2 text-sm font-medium text-red-100 hover:bg-red-800"
+                  >
+                    Delete Account
+                  </Link>
                   <NavLinkWithBadge
                     href="/notifications"
                     label="Notifications"
