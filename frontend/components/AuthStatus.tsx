@@ -43,6 +43,7 @@ function NavLinkWithBadge({
   return (
     <Link href={href} className={`relative ${className}`}>
       <span>{label}</span>
+
       {badgeCount && badgeCount > 0 ? (
         <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold leading-none text-white">
           {badgeCount > 99 ? "99+" : badgeCount}
@@ -56,6 +57,7 @@ export default function AuthStatus() {
   const [user, setUser] = useState<StoredUser | null>(null);
   const [checked, setChecked] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+
   const [employerApprovalStatus, setEmployerApprovalStatus] = useState<
     "approved" | "pending" | "rejected" | "unknown"
   >("unknown");
@@ -70,6 +72,7 @@ export default function AuthStatus() {
       if (!res.ok) return;
 
       const typed = data as NotificationsResponse;
+
       setUnreadNotifications(typed.unread_count || 0);
     } catch (err) {
       console.error(err);
@@ -82,11 +85,13 @@ export default function AuthStatus() {
     if (rawUser) {
       try {
         const parsedUser: StoredUser = JSON.parse(rawUser);
+
         setUser(parsedUser);
       } catch {
         localStorage.removeItem("user");
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
+
         setUser(null);
       }
     }
@@ -114,12 +119,21 @@ export default function AuthStatus() {
     };
 
     window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
 
     return () => {
       window.clearInterval(intervalId);
+
       window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
     };
   }, [checked, user, refreshNotificationCount]);
 
@@ -139,7 +153,10 @@ export default function AuthStatus() {
 
         const typed = data as EmployerApplicationStatus;
 
-        if (typed.legacy_account || typed.status === "approved") {
+        if (
+          typed.legacy_account ||
+          typed.status === "approved"
+        ) {
           setEmployerApprovalStatus("approved");
         } else if (typed.status === "pending") {
           setEmployerApprovalStatus("pending");
@@ -151,6 +168,7 @@ export default function AuthStatus() {
       })
       .catch((err) => {
         console.error(err);
+
         setEmployerApprovalStatus("approved");
       });
   }, [checked, user]);
@@ -159,6 +177,7 @@ export default function AuthStatus() {
     localStorage.removeItem("user");
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
+
     window.location.href = "/login";
   }
 
@@ -167,7 +186,8 @@ export default function AuthStatus() {
   }
 
   const employerIsApproved =
-    employerApprovalStatus === "approved" || employerApprovalStatus === "unknown";
+    employerApprovalStatus === "approved" ||
+    employerApprovalStatus === "unknown";
 
   return (
     <div className="mb-6 rounded-xl border border-slate-700 bg-slate-800 p-4">
@@ -180,7 +200,9 @@ export default function AuthStatus() {
                 <span className="font-semibold text-slate-100">
                   {user.username}
                 </span>{" "}
-                <span className="text-slate-400">({user.role})</span>
+                <span className="text-slate-400">
+                  ({user.role})
+                </span>
               </p>
             </div>
 
@@ -324,12 +346,7 @@ export default function AuthStatus() {
                   >
                     Messages
                   </Link>
-                  <Link
-                    href="/account/delete"
-                    className="rounded-lg bg-red-900 px-4 py-2 text-sm font-medium text-red-100 hover:bg-red-800"
-                  >
-                    Delete Account
-                  </Link>
+
                   <NavLinkWithBadge
                     href="/notifications"
                     label="Notifications"
@@ -338,6 +355,13 @@ export default function AuthStatus() {
                   />
                 </>
               )}
+
+              <Link
+                href="/account/delete"
+                className="rounded-lg bg-red-900 px-4 py-2 text-sm font-medium text-red-100 hover:bg-red-800"
+              >
+                Delete Account
+              </Link>
 
               <button
                 onClick={handleLogout}
@@ -348,17 +372,21 @@ export default function AuthStatus() {
             </div>
           </div>
 
-          {user.role === "employer" && !employerIsApproved && (
-            <div className="rounded-lg border border-yellow-700 bg-yellow-900/40 px-4 py-3 text-sm text-yellow-200">
-              Your employer account is currently under review or has been rejected.
-              Employer tools are locked until approval. Check your application
-              status for details.
-            </div>
-          )}
+          {user.role === "employer" &&
+            !employerIsApproved && (
+              <div className="rounded-lg border border-yellow-700 bg-yellow-900/40 px-4 py-3 text-sm text-yellow-200">
+                Your employer account is currently under
+                review or has been rejected. Employer tools
+                are locked until approval. Check your
+                application status for details.
+              </div>
+            )}
         </div>
       ) : (
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <p className="text-sm text-slate-300">You are not logged in.</p>
+          <p className="text-sm text-slate-300">
+            You are not logged in.
+          </p>
 
           <div className="flex flex-wrap gap-3">
             <Link
