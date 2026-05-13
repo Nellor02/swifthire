@@ -1,5 +1,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils import timezone
+import uuid
 
 
 class User(AbstractUser):
@@ -9,7 +11,35 @@ class User(AbstractUser):
         ("admin", "Admin"),
     ]
 
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="seeker")
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default="seeker",
+    )
+
+    email_verified = models.BooleanField(default=False)
+
+    email_verification_token = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        unique=True,
+    )
+
+
+    email_verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    def mark_email_verified(self):
+        self.email_verified = True
+        self.email_verified_at = timezone.now()
+        self.save(
+            update_fields=[
+                "email_verified",
+                "email_verified_at",
+            ]
+        )
 
     def __str__(self):
         return self.username
@@ -27,6 +57,7 @@ class EmployerApplication(models.Model):
         on_delete=models.CASCADE,
         related_name="employer_application",
     )
+
     company_name = models.CharField(max_length=255)
     company_email = models.EmailField()
     company_phone = models.CharField(max_length=50)
@@ -38,12 +69,25 @@ class EmployerApplication(models.Model):
     contact_person_position = models.CharField(max_length=255, blank=True)
     supporting_note = models.TextField(blank=True)
 
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="pending",
+    )
+
     admin_notes = models.TextField(blank=True)
 
     submitted_at = models.DateTimeField(auto_now_add=True)
-    reviewed_at = models.DateTimeField(null=True, blank=True)
-    pending_reminder_sent_at = models.DateTimeField(null=True, blank=True)
+
+    reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    pending_reminder_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         ordering = ["-submitted_at"]

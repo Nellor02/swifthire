@@ -1,6 +1,8 @@
 from django.urls import path
 from .views import (
     CurrentUserAPIView,
+    VerifyEmailAPIView,
+    ResendVerificationEmailAPIView,
     DeleteAccountAPIView,
     SeekerRegisterAPIView,
     EmployerApplyAPIView,
@@ -13,6 +15,10 @@ from .views import (
 
 urlpatterns = [
     path("me/", CurrentUserAPIView.as_view(), name="current-user"),
+
+    path("verify-email/<uuid:token>/", VerifyEmailAPIView.as_view(), name="verify-email"),
+    path("resend-verification-email/", ResendVerificationEmailAPIView.as_view(), name="resend-verification-email"),
+
     path("delete-account/", DeleteAccountAPIView.as_view(), name="delete-account"),
 
     path("register/seeker/", SeekerRegisterAPIView.as_view(), name="register-seeker"),

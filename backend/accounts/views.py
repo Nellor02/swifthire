@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Count
 from django.utils import timezone
@@ -25,6 +26,27 @@ from .utils import (
 User = get_user_model()
 
 
+def send_email_verification(user):
+    if not user.email:
+        return False
+
+    site_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    verification_url = f"{site_url}/verify-email/{user.email_verification_token}"
+
+    return send_platform_email(
+        subject="Verify your SwiftHire email",
+        message=(
+            f"Hello {user.username},\n\n"
+            f"Please verify your email address to activate your SwiftHire account.\n\n"
+            f"Verify your email here:\n{verification_url}\n\n"
+            f"If you did not create this account, you can ignore this email."
+        ),
+        recipient_list=[user.email],
+        email_type="support",
+        fail_silently=False,
+    )
+
+
 class CurrentUserAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -35,8 +57,58 @@ class CurrentUserAPIView(APIView):
                 "username": request.user.username,
                 "email": request.user.email,
                 "role": getattr(request.user, "role", ""),
+                "email_verified": getattr(request.user, "email_verified", False),
             }
         )
+
+
+class VerifyEmailAPIView(APIView):
+    def get(self, request, token):
+        try:
+            user = User.objects.get(email_verification_token=token)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Invalid or expired verification link."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if user.email_verified:
+            return Response(
+                {"message": "Email is already verified."},
+                status=status.HTTP_200_OK,
+            )
+
+        user.mark_email_verified()
+
+        return Response(
+            {"message": "Email verified successfully. You can now log in."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ResendVerificationEmailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if getattr(request.user, "email_verified", False):
+            return Response(
+                {"message": "Your email is already verified."},
+                status=status.HTTP_200_OK,
+            )
+
+        sent = send_email_verification(request.user)
+
+        if not sent:
+            return Response(
+                {"error": "Could not send verification email."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response(
+            {"message": "Verification email sent successfully."},
+            status=status.HTTP_200_OK,
+        )
+
 
 class DeleteAccountAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -71,40 +143,26 @@ class DeleteAccountAPIView(APIView):
             {"message": f"Account '{username}' has been deleted successfully."},
             status=status.HTTP_200_OK,
         )
+
+
 class SeekerRegisterAPIView(APIView):
     def post(self, request):
         serializer = SeekerRegisterSerializer(data=request.data)
 
         if serializer.is_valid():
             user = serializer.save()
-
-            if user.email:
-                send_platform_email(
-                    subject="Welcome to SwiftHire",
-                    message=(
-                        f"Hello {user.username},\n\n"
-                        f"Welcome to SwiftHire. Your seeker account has been created successfully.\n\n"
-                        f"You can now:\n"
-                        f"- Build your professional profile\n"
-                        f"- Browse job opportunities\n"
-                        f"- Apply to jobs\n"
-                        f"- Connect with employers\n"
-                        f"- Receive real-time updates and notifications\n\n"
-                        f"We're excited to have you on SwiftHire."
-                    ),
-                    recipient_list=[user.email],
-                    email_type="welcome",
-                )
+            send_email_verification(user)
 
             return Response(
                 {
-                    "message": "Seeker account created successfully.",
-                    "redirect_to": "/login?registered=1",
+                    "message": "Seeker account created successfully. Please check your email to verify your account.",
+                    "redirect_to": "/login?registered=1&verify_email=1",
                 },
                 status=status.HTTP_201_CREATED,
             )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class EmployerApplyAPIView(APIView):
     def post(self, request):
@@ -113,6 +171,7 @@ class EmployerApplyAPIView(APIView):
         if serializer.is_valid():
             application = serializer.save()
 
+            send_email_verification(application.user)
             notify_admins_new_employer_application(application)
 
             if application.user.email:
@@ -122,7 +181,7 @@ class EmployerApplyAPIView(APIView):
                         f"Hello {application.user.username},\n\n"
                         f"Your employer application for {application.company_name} "
                         f"has been received and is currently pending review.\n\n"
-                        f"You can log in to SwiftHire to track your application status.\n\n"
+                        f"Please verify your email address using the verification email we sent you.\n\n"
                         f"We will notify you once your application has been reviewed."
                     ),
                     recipient_list=[application.user.email],
@@ -131,8 +190,8 @@ class EmployerApplyAPIView(APIView):
 
             return Response(
                 {
-                    "message": "Employer application submitted successfully. Please wait for admin review.",
-                    "redirect_to": "/login?employer_pending=1",
+                    "message": "Employer application submitted successfully. Please verify your email and wait for admin review.",
+                    "redirect_to": "/login?employer_pending=1&verify_email=1",
                 },
                 status=status.HTTP_201_CREATED,
             )
@@ -184,107 +243,6 @@ class EmployerApplicationMeAPIView(APIView):
             )
 
 
-class AdminEmployerApplicationReviewAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def patch(self, request, pk):
-        if getattr(request.user, "role", None) != "admin":
-            return Response(
-                {"error": "Only admins can review employer applications."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        try:
-            application = EmployerApplication.objects.select_related("user").get(pk=pk)
-        except EmployerApplication.DoesNotExist:
-            return Response(
-                {"error": "Employer application not found."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        new_status = str(request.data.get("status", "")).strip().lower()
-        admin_notes = str(request.data.get("admin_notes", "")).strip()
-
-        if new_status not in {"approved", "rejected"}:
-            return Response(
-                {"error": "Status must be either 'approved' or 'rejected'."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        application.status = new_status
-        application.admin_notes = admin_notes
-        application.reviewed_at = timezone.now()
-
-        application.save(
-            update_fields=[
-                "status",
-                "admin_notes",
-                "reviewed_at",
-            ]
-        )
-
-        if new_status == "approved":
-            user = application.user
-            user.role = "employer"
-            user.save(update_fields=["role"])
-
-            from companies.models import Company
-
-            company_exists = Company.objects.filter(owner=user).exists()
-
-            if not company_exists:
-                Company.objects.create(
-                    owner=user,
-                    name=application.company_name,
-                    email=application.company_email,
-                    phone=application.company_phone,
-                    website=application.company_website,
-                    address=application.company_address,
-                    description=application.business_description,
-                )
-
-        notify_employer_application_review(application)
-
-        if application.user.email:
-            if new_status == "approved":
-                send_platform_email(
-                    subject="SwiftHire Employer Application Approved",
-                    message=(
-                        f"Hello {application.user.username},\n\n"
-                        f"Your employer application for {application.company_name} "
-                        f"has been approved.\n\n"
-                        f"You can now:\n"
-                        f"- Create company profiles\n"
-                        f"- Post jobs\n"
-                        f"- Review applicants\n"
-                        f"- Message candidates\n"
-                        f"- Manage hiring workflows\n\n"
-                        f"Welcome to SwiftHire."
-                    ),
-                    recipient_list=[application.user.email],
-                    email_type="support",
-                )
-
-            else:
-                send_platform_email(
-                    subject="SwiftHire Employer Application Update",
-                    message=(
-                        f"Hello {application.user.username},\n\n"
-                        f"Your employer application for {application.company_name} "
-                        f"has been reviewed and was rejected.\n\n"
-                        f"Admin notes:\n"
-                        f"{application.admin_notes or 'No additional notes provided.'}"
-                    ),
-                    recipient_list=[application.user.email],
-                    email_type="support",
-                )
-
-        serializer = EmployerApplicationSerializer(application)
-
-        return Response(
-            serializer.data,
-            status=status.HTTP_200_OK,
-        )
 class AdminEmployerApplicationListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -303,6 +261,7 @@ class AdminEmployerApplicationListAPIView(APIView):
 
         serializer = EmployerApplicationSerializer(applications, many=True)
         return Response(serializer.data)
+
 
 class AdminEmployerApplicationDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -388,9 +347,16 @@ class AdminEmployerApplicationReviewAPIView(APIView):
                         f"Hello {application.user.username},\n\n"
                         f"Your employer application for {application.company_name} "
                         f"has been approved.\n\n"
-                        f"You can now log in and use your employer dashboard."
+                        f"You can now:\n"
+                        f"- Create company profiles\n"
+                        f"- Post jobs\n"
+                        f"- Review applicants\n"
+                        f"- Message candidates\n"
+                        f"- Manage hiring workflows\n\n"
+                        f"Welcome to SwiftHire."
                     ),
                     recipient_list=[application.user.email],
+                    email_type="support",
                 )
             else:
                 send_platform_email(
@@ -399,9 +365,11 @@ class AdminEmployerApplicationReviewAPIView(APIView):
                         f"Hello {application.user.username},\n\n"
                         f"Your employer application for {application.company_name} "
                         f"has been reviewed and was rejected.\n\n"
-                        f"Admin notes: {application.admin_notes or 'No additional notes provided.'}"
+                        f"Admin notes:\n"
+                        f"{application.admin_notes or 'No additional notes provided.'}"
                     ),
                     recipient_list=[application.user.email],
+                    email_type="support",
                 )
 
         serializer = EmployerApplicationSerializer(application)
