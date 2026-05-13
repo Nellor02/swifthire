@@ -58,7 +58,10 @@ class ApplyToJobAPIView(APIView):
             )
 
         try:
-            job = Job.objects.get(id=job_id, status="active")
+            job = Job.objects.select_related("company", "company__owner").get(
+                id=job_id,
+                status="active",
+            )
         except Job.DoesNotExist:
             return Response(
                 {"error": "Job not found."},
@@ -114,7 +117,6 @@ class ApplyToJobAPIView(APIView):
 
         serializer = ApplicationSerializer(application)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
 
 class EmployerJobApplicationsAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -246,7 +248,7 @@ class UpdateApplicationStatusAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        new_status = request.data.get("status", "").strip()
+        new_status = request.data.get("status", "").strip().lower()
         valid_statuses = {"pending", "reviewed", "accepted", "rejected"}
 
         if new_status not in valid_statuses:
@@ -256,7 +258,7 @@ class UpdateApplicationStatusAPIView(APIView):
             )
 
         application.status = new_status
-        application.save()
+        application.save(update_fields=["status"])
 
         create_notification(
             user=application.applicant,
@@ -266,11 +268,10 @@ class UpdateApplicationStatusAPIView(APIView):
             target_id=application.id,
             target_url=f"/my-applications/{application.id}",
             email_type="support",
-)
+        )
 
         serializer = ApplicationSerializer(application)
-        return Response(serializer.data)
-
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class UpdateApplicationNotesAPIView(APIView):
     permission_classes = [IsAuthenticated]
