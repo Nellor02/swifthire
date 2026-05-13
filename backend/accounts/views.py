@@ -38,7 +38,39 @@ class CurrentUserAPIView(APIView):
             }
         )
 
+class DeleteAccountAPIView(APIView):
+    permission_classes = [IsAuthenticated]
 
+    def delete(self, request):
+        password = str(request.data.get("password", "")).strip()
+        confirmation = str(request.data.get("confirmation", "")).strip().upper()
+
+        if not password:
+            return Response(
+                {"error": "Password is required to delete your account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if confirmation != "DELETE":
+            return Response(
+                {"error": "Type DELETE to confirm account deletion."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not request.user.check_password(password):
+            return Response(
+                {"error": "Password is incorrect."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        username = request.user.username
+        user = request.user
+        user.delete()
+
+        return Response(
+            {"message": f"Account '{username}' has been deleted successfully."},
+            status=status.HTTP_200_OK,
+        )
 class SeekerRegisterAPIView(APIView):
     def post(self, request):
         serializer = SeekerRegisterSerializer(data=request.data)
