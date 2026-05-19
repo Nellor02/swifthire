@@ -11,6 +11,7 @@ from .views import (
     AdminEmployerApplicationDetailAPIView,
     AdminEmployerApplicationReviewAPIView,
     AdminAnalyticsOverviewAPIView,
+    ResendVerificationEmailAPIView,
 )
 
 urlpatterns = [
@@ -31,4 +32,7 @@ urlpatterns = [
     path("admin/employer-applications/<int:pk>/review/", AdminEmployerApplicationReviewAPIView.as_view(), name="admin-employer-application-review"),
 
     path("admin/analytics/overview/", AdminAnalyticsOverviewAPIView.as_view(), name="admin-analytics-overview"),
+
+    path(
+    "resend-verification/", ResendVerificationEmailAPIView.as_view(), name="resend-verification"),
 ]

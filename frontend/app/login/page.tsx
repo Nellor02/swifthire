@@ -1,11 +1,9 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import StatusCard from "../../components/StatusCard";
-import { useSearchParams } from "next/navigation";
-
 
 type LoginForm = {
   username: string;
@@ -17,6 +15,7 @@ type CurrentUser = {
   username: string;
   email: string;
   role: string;
+  email_verified?: boolean;
 };
 
 type EmployerApplication = {
@@ -35,6 +34,14 @@ async function parseResponseSafely(res: Response) {
   return { error: text || `Request failed with status ${res.status}` };
 }
 
+function getApiBaseUrl() {
+  return (
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    "http://127.0.0.1:8000"
+  ).replace(/\/$/, "");
+}
+
 function extractErrorMessage(data: Record<string, unknown>) {
   if (!data || typeof data !== "object") {
     return "Login failed.";
@@ -48,6 +55,14 @@ function extractErrorMessage(data: Record<string, unknown>) {
     return data.error;
   }
 
+  if (Array.isArray(data.detail) && data.detail.length > 0) {
+    return String(data.detail[0]);
+  }
+
+  if (Array.isArray(data.non_field_errors) && data.non_field_errors.length > 0) {
+    return String(data.non_field_errors[0]);
+  }
+
   return "Login failed.";
 }
 
@@ -57,6 +72,7 @@ export default function LoginPage() {
 
   const registered = searchParams.get("registered");
   const employerPending = searchParams.get("employer_pending");
+  const verifyEmail = searchParams.get("verify_email");
 
   const [form, setForm] = useState<LoginForm>({
     username: "",
@@ -68,6 +84,7 @@ export default function LoginPage() {
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = e.target;
+
     setForm((prev) => ({
       ...prev,
       [name]: value,
@@ -76,11 +93,14 @@ export default function LoginPage() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+
     setLoading(true);
     setError("");
 
     try {
-      const tokenRes = await fetch("http://127.0.0.1:8000/api/token/", {
+      const apiBaseUrl = getApiBaseUrl();
+
+      const tokenRes = await fetch(`${apiBaseUrl}/api/token/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -103,8 +123,10 @@ export default function LoginPage() {
 
       localStorage.setItem("access_token", access);
       localStorage.setItem("refresh_token", refresh);
+      localStorage.setItem("access", access);
+      localStorage.setItem("refresh", refresh);
 
-      const meRes = await fetch("http://127.0.0.1:8000/api/accounts/me/", {
+      const meRes = await fetch(`${apiBaseUrl}/api/accounts/me/`, {
         headers: {
           Authorization: `Bearer ${access}`,
         },
@@ -132,7 +154,7 @@ export default function LoginPage() {
 
       if (user.role === "employer") {
         const appRes = await fetch(
-          "http://127.0.0.1:8000/api/accounts/employer-application/me/",
+          `${apiBaseUrl}/api/accounts/employer-application/me/`,
           {
             headers: {
               Authorization: `Bearer ${access}`,
@@ -161,6 +183,7 @@ export default function LoginPage() {
       router.push("/");
     } catch (err) {
       console.error(err);
+
       setError(err instanceof Error ? err.message : "Login failed.");
     } finally {
       setLoading(false);
@@ -175,6 +198,7 @@ export default function LoginPage() {
             <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white">
               SH
             </div>
+
             <span className="mt-2 text-lg font-semibold text-slate-100">
               SwiftHire
             </span>
@@ -183,9 +207,11 @@ export default function LoginPage() {
           <h1 className="text-4xl font-bold text-slate-100">
             Welcome to SwiftHire
           </h1>
+
           <p className="mt-2 text-slate-300">
             Fast connections. Better careers. Stronger teams.
           </p>
+
           <p className="mx-auto mt-3 max-w-md text-sm text-slate-400">
             SwiftHire is a modern hiring platform built to connect job seekers
             with their next opportunity and employers with their next valuable
@@ -196,6 +222,17 @@ export default function LoginPage() {
         {error && (
           <div className="mb-6">
             <StatusCard title="Login Error" message={error} variant="error" />
+
+            {error.toLowerCase().includes("verify") && (
+              <div className="mt-3 text-center">
+                <Link
+                  href="/resend-verification"
+                  className="text-sm font-medium text-blue-400 transition hover:text-blue-300 hover:underline"
+                >
+                  Resend verification email
+                </Link>
+              </div>
+            )}
           </div>
         )}
 
@@ -203,7 +240,11 @@ export default function LoginPage() {
           <div className="mb-6">
             <StatusCard
               title="Account Created"
-              message="Your account was created successfully. Please log in."
+              message={
+                verifyEmail === "1"
+                  ? "Your account was created successfully. Please check your email to verify your account before logging in."
+                  : "Your account was created successfully. Please log in."
+              }
               variant="success"
             />
           </div>
@@ -213,7 +254,11 @@ export default function LoginPage() {
           <div className="mb-6">
             <StatusCard
               title="Employer Application Submitted"
-              message="Your employer application was submitted successfully. You can log in to track its status while it is under review."
+              message={
+                verifyEmail === "1"
+                  ? "Your employer application was submitted successfully. Please verify your email and wait for admin review."
+                  : "Your employer application was submitted successfully. You can log in to track its status while it is under review."
+              }
               variant="success"
             />
           </div>
@@ -227,6 +272,7 @@ export default function LoginPage() {
             <label className="mb-2 block text-sm font-medium text-slate-200">
               Username
             </label>
+
             <input
               type="text"
               name="username"
@@ -242,6 +288,7 @@ export default function LoginPage() {
             <label className="mb-2 block text-sm font-medium text-slate-200">
               Password
             </label>
+
             <input
               type="password"
               name="password"
@@ -260,11 +307,23 @@ export default function LoginPage() {
           >
             {loading ? "Logging In..." : "Log In"}
           </button>
+
+          <div className="text-center">
+            <Link
+              href="/resend-verification"
+              className="text-sm font-medium text-blue-400 transition hover:text-blue-300 hover:underline"
+            >
+              Resend verification email
+            </Link>
+          </div>
         </form>
 
         <div className="mt-6 text-center text-sm text-slate-300">
           New here?{" "}
-          <Link href="/register" className="font-medium text-blue-400 hover:underline">
+          <Link
+            href="/register"
+            className="font-medium text-blue-400 hover:underline"
+          >
             Create an account
           </Link>
         </div>

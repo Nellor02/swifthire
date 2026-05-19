@@ -1,4 +1,5 @@
 from datetime import timedelta
+import uuid
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -61,7 +62,65 @@ class CurrentUserAPIView(APIView):
             }
         )
 
+class ResendVerificationEmailAPIView(APIView):
+    def post(self, request):
+        email = str(request.data.get("email", "")).strip().lower()
 
+        if not email:
+            return Response(
+                {"error": "Email is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {
+                    "message": (
+                        "If an account exists for this email, "
+                        "a verification email has been sent."
+                    )
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        if user.email_verified:
+            return Response(
+                {"message": "This email is already verified."},
+                status=status.HTTP_200_OK,
+            )
+
+        user.email_verification_token = uuid.uuid4()
+        user.save(update_fields=["email_verification_token"])
+
+        frontend_url = getattr(settings, "FRONTEND_URL", "").rstrip("/")
+
+        verification_url = (
+            f"{frontend_url}/verify-email/{user.email_verification_token}"
+        )
+
+        send_platform_email(
+            subject="Verify Your SwiftHire Account",
+            message=(
+                f"Hello {user.username},\n\n"
+                f"Please verify your SwiftHire account by clicking the link below:\n\n"
+                f"{verification_url}\n\n"
+                f"If you did not create this account, you can ignore this email."
+            ),
+            recipient_list=[user.email],
+            email_type="welcome",
+        )
+
+        return Response(
+            {
+                "message": (
+                    "If an account exists for this email, "
+                    "a verification email has been sent."
+                )
+            },
+            status=status.HTTP_200_OK,
+        )
 class VerifyEmailAPIView(APIView):
     def get(self, request, token):
         try:
