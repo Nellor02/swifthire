@@ -69,6 +69,14 @@ export default function AuthStatus() {
       const res = await authFetch("/api/profiles/notifications/");
       const data = await parseResponseSafely(res);
 
+      if (res.status === 401) {
+        localStorage.removeItem("user");
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+        setUser(null);
+        return;
+      }
+
       if (!res.ok) return;
 
       const typed = data as NotificationsResponse;
@@ -106,7 +114,7 @@ export default function AuthStatus() {
 
     const intervalId = window.setInterval(() => {
       refreshNotificationCount();
-    }, 30000);
+    }, 60000);
 
     const handleFocus = () => {
       refreshNotificationCount();
