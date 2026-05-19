@@ -106,7 +106,7 @@ else:
             "CONN_MAX_AGE": 60,
         }
     }
-
+DATABASES["default"]["CONN_HEALTH_CHECKS"]=True
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
 
 CHANNEL_LAYERS = {
