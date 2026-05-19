@@ -12,6 +12,8 @@ from .views import (
     AdminEmployerApplicationReviewAPIView,
     AdminAnalyticsOverviewAPIView,
     ResendVerificationEmailAPIView,
+    RequestPasswordResetAPIView,
+    ResetPasswordAPIView,
 )
 
 urlpatterns = [
@@ -35,4 +37,9 @@ urlpatterns = [
 
     path(
     "resend-verification/", ResendVerificationEmailAPIView.as_view(), name="resend-verification"),
+
+    path(
+        "password-reset/",RequestPasswordResetAPIView.as_view(),name="password-reset"),
+
+    path("password-reset/<uuid:token>/",ResetPasswordAPIView.as_view(),name="password-reset-confirm"),
 ]

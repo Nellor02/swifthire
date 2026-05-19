@@ -1,7 +1,8 @@
+import uuid
+
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
-import uuid
 
 
 class User(AbstractUser):
@@ -11,22 +12,26 @@ class User(AbstractUser):
         ("admin", "Admin"),
     ]
 
-    role = models.CharField(
-        max_length=20,
-        choices=ROLE_CHOICES,
-        default="seeker",
-    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="seeker")
 
     email_verified = models.BooleanField(default=False)
 
     email_verification_token = models.UUIDField(
         default=uuid.uuid4,
         editable=False,
+        null=True,
+        blank=True,
+    )
+
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+
+    password_reset_token = models.UUIDField(
+        null=True,
+        blank=True,
         unique=True,
     )
 
-
-    email_verified_at = models.DateTimeField(
+    password_reset_sent_at = models.DateTimeField(
         null=True,
         blank=True,
     )
@@ -34,10 +39,13 @@ class User(AbstractUser):
     def mark_email_verified(self):
         self.email_verified = True
         self.email_verified_at = timezone.now()
+        self.email_verification_token = None
+
         self.save(
             update_fields=[
                 "email_verified",
                 "email_verified_at",
+                "email_verification_token",
             ]
         )
 
@@ -78,16 +86,8 @@ class EmployerApplication(models.Model):
     admin_notes = models.TextField(blank=True)
 
     submitted_at = models.DateTimeField(auto_now_add=True)
-
-    reviewed_at = models.DateTimeField(
-        null=True,
-        blank=True,
-    )
-
-    pending_reminder_sent_at = models.DateTimeField(
-        null=True,
-        blank=True,
-    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    pending_reminder_sent_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-submitted_at"]

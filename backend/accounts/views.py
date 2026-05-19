@@ -143,7 +143,118 @@ class VerifyEmailAPIView(APIView):
             {"message": "Email verified successfully. You can now log in."},
             status=status.HTTP_200_OK,
         )
+class RequestPasswordResetAPIView(APIView):
+    def post(self, request):
+        email = str(request.data.get("email", "")).strip().lower()
 
+        if not email:
+            return Response(
+                {"error": "Email is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            return Response(
+                {
+                    "message": (
+                        "If an account exists with that email, "
+                        "a password reset link has been sent."
+                    )
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        user.password_reset_token = uuid.uuid4()
+        user.password_reset_sent_at = timezone.now()
+
+        user.save(
+            update_fields=[
+                "password_reset_token",
+                "password_reset_sent_at",
+            ]
+        )
+
+        frontend_url = getattr(
+            settings,
+            "FRONTEND_URL",
+            "http://localhost:3000",
+        ).rstrip("/")
+
+        reset_url = (
+            f"{frontend_url}/reset-password/"
+            f"{user.password_reset_token}"
+        )
+
+        send_platform_email(
+            subject="Reset Your SwiftHire Password",
+            message=(
+                f"Hello {user.username},\n\n"
+                f"We received a request to reset your password.\n\n"
+                f"Reset your password here:\n"
+                f"{reset_url}\n\n"
+                f"If you did not request this, you can safely ignore this email."
+            ),
+            recipient_list=[user.email],
+            email_type="support",
+        )
+
+        return Response(
+            {
+                "message": (
+                    "If an account exists with that email, "
+                    "a password reset link has been sent."
+                )
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ResetPasswordAPIView(APIView):
+    def post(self, request, token):
+        password = str(request.data.get("password", "")).strip()
+        confirm_password = str(
+            request.data.get("confirm_password", "")
+        ).strip()
+
+        if len(password) < 6:
+            return Response(
+                {"error": "Password must be at least 6 characters."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if password != confirm_password:
+            return Response(
+                {"error": "Passwords do not match."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            user = User.objects.get(password_reset_token=token)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Invalid or expired reset token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.set_password(password)
+
+        user.password_reset_token = None
+        user.password_reset_sent_at = None
+
+        user.save(
+            update_fields=[
+                "password",
+                "password_reset_token",
+                "password_reset_sent_at",
+            ]
+        )
+
+        return Response(
+            {"message": "Password reset successfully."},
+            status=status.HTTP_200_OK,
+        )
 
 class ResendVerificationEmailAPIView(APIView):
     permission_classes = [IsAuthenticated]
