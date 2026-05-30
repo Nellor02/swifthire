@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getStoredUser } from "../../lib/auth";
 import { authFetch } from "../../lib/api";
 import StatusCard from "../../components/StatusCard";
@@ -13,6 +14,20 @@ type SeekerDashboardStats = {
   accepted_applications: number;
   rejected_applications: number;
   unread_notifications: number;
+};
+
+type CompletionStatus = {
+  complete: boolean;
+  percentage: number;
+  missing: string[];
+};
+
+const fieldLabels: Record<string, string> = {
+  full_name: "Full name",
+  headline: "Headline",
+  bio: "Bio",
+  location: "Location",
+  skills: "Skills",
 };
 
 async function parseResponseSafely(res: Response) {
@@ -27,9 +42,14 @@ async function parseResponseSafely(res: Response) {
 }
 
 export default function SeekerDashboardPage() {
+  const router = useRouter();
+
   const [userChecked, setUserChecked] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isSeeker, setIsSeeker] = useState(false);
+
+  const [profileCompletion, setProfileCompletion] =
+    useState<CompletionStatus | null>(null);
 
   const [stats, setStats] = useState<SeekerDashboardStats>({
     total_applications: 0,
@@ -71,31 +91,66 @@ export default function SeekerDashboardPage() {
       return;
     }
 
-    setLoading(true);
-    setError("");
+    async function loadDashboard() {
+      setLoading(true);
+      setError("");
 
-    authFetch("http://127.0.0.1:8000/api/applications/seeker/dashboard/stats/")
-      .then(async (res) => {
-        const data = await parseResponseSafely(res);
+      try {
+        const completionRes = await authFetch(
+          "/api/profiles/completion-status/"
+        );
 
-        if (!res.ok) {
-          throw new Error(data?.error || "Could not load seeker dashboard.");
+        const completionData = await parseResponseSafely(completionRes);
+
+        if (completionRes.status === 401) {
+          localStorage.removeItem("user");
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("refresh_token");
+          localStorage.removeItem("access");
+          localStorage.removeItem("refresh");
+
+          router.push("/login");
+          return;
         }
 
-        return data;
-      })
-      .then((data: SeekerDashboardStats) => {
-        setStats(data);
-        setLoading(false);
-      })
-      .catch((err) => {
+        if (!completionRes.ok) {
+          throw new Error(
+            completionData?.error || "Could not check profile completion."
+          );
+        }
+
+        const completion = completionData as CompletionStatus;
+        setProfileCompletion(completion);
+
+        if (!completion.complete) {
+          router.push("/onboarding/seeker");
+          return;
+        }
+
+        const statsRes = await authFetch(
+          "/api/applications/seeker/dashboard/stats/"
+        );
+
+        const statsData = await parseResponseSafely(statsRes);
+
+        if (!statsRes.ok) {
+          throw new Error(statsData?.error || "Could not load seeker dashboard.");
+        }
+
+        setStats(statsData as SeekerDashboardStats);
+      } catch (err) {
         console.error(err);
+
         setError(
           err instanceof Error ? err.message : "Could not load seeker dashboard."
         );
+      } finally {
         setLoading(false);
-      });
-  }, [userChecked, isLoggedIn, isSeeker]);
+      }
+    }
+
+    loadDashboard();
+  }, [userChecked, isLoggedIn, isSeeker, router]);
 
   if (!userChecked) {
     return null;
@@ -170,6 +225,32 @@ export default function SeekerDashboardPage() {
           </div>
         </div>
 
+        {profileCompletion && profileCompletion.complete && (
+          <div className="mb-6 rounded-xl border border-green-800 bg-green-950/30 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-green-200">
+                  Profile Complete
+                </h2>
+                <p className="mt-1 text-sm text-green-100">
+                  Your required seeker profile fields are complete.
+                </p>
+              </div>
+
+              <span className="rounded-full bg-green-900/70 px-3 py-1 text-sm font-semibold text-green-200">
+                {profileCompletion.percentage}%
+              </span>
+            </div>
+
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-700">
+              <div
+                className="h-full rounded-full bg-green-500"
+                style={{ width: `${profileCompletion.percentage}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <StatusCard
             title="Loading Dashboard"
@@ -177,11 +258,7 @@ export default function SeekerDashboardPage() {
             variant="info"
           />
         ) : error ? (
-          <StatusCard
-            title="Error"
-            message={error}
-            variant="error"
-          />
+          <StatusCard title="Error" message={error} variant="error" />
         ) : (
           <>
             <div className="mb-6 grid gap-4 md:grid-cols-3">

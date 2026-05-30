@@ -13,6 +13,7 @@ from .views import (
     NotificationListAPIView,
     MarkNotificationReadAPIView,
     MarkAllNotificationsReadAPIView,
+    ProfileCompletionStatusAPIView
 )
 
 urlpatterns = [
@@ -31,4 +32,5 @@ urlpatterns = [
     path("notifications/", NotificationListAPIView.as_view(), name="notification-list"),
     path("notifications/read-all/", MarkAllNotificationsReadAPIView.as_view(), name="notifications-read-all"),
     path("notifications/<int:pk>/read/", MarkNotificationReadAPIView.as_view(), name="notification-read"),
+    path("completion-status/", ProfileCompletionStatusAPIView.as_view(), name="profile-completion-status"),
 ]

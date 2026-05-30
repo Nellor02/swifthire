@@ -734,3 +734,60 @@ class MarkAllNotificationsReadAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+class ProfileCompletionStatusAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if getattr(request.user, "role", "") != "seeker":
+            return Response(
+                {
+                    "complete": True,
+                    "percentage": 100,
+                    "missing": [],
+                }
+            )
+
+        try:
+            profile = SeekerProfile.objects.get(user=request.user)
+        except SeekerProfile.DoesNotExist:
+            return Response(
+                {
+                    "complete": False,
+                    "percentage": 0,
+                    "missing": [
+                        "full_name",
+                        "headline",
+                        "bio",
+                        "location",
+                        "skills",
+                    ],
+                }
+            )
+
+        required_fields = {
+            "full_name": profile.full_name,
+            "headline": profile.headline,
+            "bio": profile.bio,
+            "location": profile.location,
+            "skills": profile.skills,
+        }
+
+        missing = []
+
+        for field_name, value in required_fields.items():
+            if not value or not str(value).strip():
+                missing.append(field_name)
+
+        completed = len(required_fields) - len(missing)
+
+        percentage = int(
+            (completed / len(required_fields)) * 100
+        )
+
+        return Response(
+            {
+                "complete": len(missing) == 0,
+                "percentage": percentage,
+                "missing": missing,
+            }
+        )
