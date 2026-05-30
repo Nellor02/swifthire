@@ -1,4 +1,5 @@
 from django.urls import path
+from .admin_views import AdminUserListAPIView, AdminUserActionAPIView
 from .views import (
     CurrentUserAPIView,
     VerifyEmailAPIView,
@@ -42,4 +43,6 @@ urlpatterns = [
         "password-reset/",RequestPasswordResetAPIView.as_view(),name="password-reset"),
 
     path("password-reset/<uuid:token>/",ResetPasswordAPIView.as_view(),name="password-reset-confirm"),
+    path("admin/users/", AdminUserListAPIView.as_view(), name="admin-user-list"),
+    path("admin/users/<int:user_id>/", AdminUserActionAPIView.as_view(), name="admin-user-action"),
 ]

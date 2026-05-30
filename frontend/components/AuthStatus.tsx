@@ -301,6 +301,7 @@ export default function AuthStatus() {
                       <>
                         <MenuLink href="/admin/employer-applications" label="Employer Reviews" onClick={closeMenu} />
                         <MenuLink href="/admin/analytics" label="Analytics" onClick={closeMenu} />
+                        <MenuLink href="/admin/users" label="User Management" onClick={closeMenu} />
                         <MenuLink href="/employer/jobs" label="Platform Jobs" onClick={closeMenu} />
                       </>
                     )}
@@ -360,4 +361,4 @@ export default function AuthStatus() {
       )}
     </div>
   );
-}
+} 
